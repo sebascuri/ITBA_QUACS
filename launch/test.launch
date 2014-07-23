@@ -1,0 +1,10 @@
+<launch>
+
+<node name="controller" pkg="ardrone_control" type="controller.py" respawn="false" output="screen" >	
+	
+</node>
+
+</launch>
+<!--
+<rosparam file="$(find ardrone_control)/parameters/PID_Parameters.yaml" command="load" param="/"/> 
+-->

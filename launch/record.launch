@@ -1,0 +1,17 @@
+<launch>
+<!--
+<node name="navdata" pkg="rosbag" type="record" args=" -o $(find ardrone_control)/bagfiles/navdata ardrone/navdata"/> 
+<node name="imu_raw" pkg="rosbag" type="record" args="-o $(find ardrone_control)/bagfiles/imu_raw ardrone/imu_raw"/> 
+<node name="sonar_height" pkg="rosbag" type="record" args="-o $(find ardrone_control)/bagfiles/sonar_height sonar_height"/> 
+<node name="bottom_camera" pkg="rosbag" type="record" args="-o $(find ardrone_control)/bagfiles/bottom_camera ardrone/bottom/image_raw"/> 
+<node name="cmd_vel" pkg="rosbag" type="record" args="-o $(find ardrone_control)/bagfiles/cmd_vel cmd_vel"/> 
+
+<arg name="arduino" default="false"/>
+<node name="gps" pkg="rosbag" type="record" args="-o $(find ardrone_control)/bagfiles/gps fix" if="$(arg arduino)"/> 
+<node name="mag" pkg="rosbag" type="record" args="-o $(find ardrone_control)/bagfiles/mag ardrone/mag" if="$(arg arduino)"/> 
+-->
+<node name="" pkg="ardrone_control" type="record_navdata" />
+<node name="" pkg="ardrone_control" type="record_imu" />
+<node name="" pkg="ardrone_control" type="record_cmd_vel" />
+<node name="" pkg="ardrone_control" type="record_bottom_camera" />
+</launch>

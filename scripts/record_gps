@@ -1,0 +1,2 @@
+#!/bin/bash
+rostopic echo -p /ardrone/fix > `rospack find ardrone_control`/bagfiles/$(date +%Y-%m-%d-%H-%M-%S)_gps.csv
