@@ -13,6 +13,8 @@ from diagnostic_msgs.msg import KeyValue
 
 from dynamic_reconfigure.server import Server
 from ardrone_control.cfg import ControllerConfig
+#from ardrone_control.cfg import PID_ControllerConfig, TF_ControllerConfig, ZPK_ControllerConfig
+
 
 import inspect
 
@@ -23,8 +25,13 @@ class Controller(Quadrotor, object):
 	"""docstring for Controller"""
 	def __init__(self, **kwargs):
 		super(Controller, self).__init__(**kwargs)
-
-		self.controller = kwargs.get('controller')
+		self.controller = dict(
+			x = Controllers.PID( Kp =1.0 ),
+			y = Controllers.PID( Kp =1.0 ),
+			z = Controllers.PID( Kp =1.0 ),
+			yaw = Controllers.PID( Kp =1.0, periodic = True)
+			)
+		self.srv = Server(ControllerConfig, self.configure_controller )
 
 		self.controller_state = False
 
@@ -48,44 +55,45 @@ class Controller(Quadrotor, object):
 			)
 
 		#self.tfListener = tf.TransformListener()
-	"""
-	def setup_controller( self, config, level):
-		rospy.logwarn("Controller Configuration Changed! \nFor Safety Reasons it will Deactivate, please reactivate manually!")
-		self.controller_state = False
-		controller_type = config.type
-		self.controller = dict( 
-			x = getattr(Controllers, controller_type)( 
-				Kp = config.proportional_x,
-				Kd = config.derivative_x,
-				Ki = config.integral_x,
-				a = [float(a) for a in (config.num_x).split(',') ],
-				b = [float(b) for b in (config.den_x).split(',') ],
-				), 
-			y = getattr(Controllers, controller_type)( 
-				Kp = config.proportional_y,
-				Kd = config.derivative_y,
-				Ki = config.integral_y,
-				a = [float(a) for a in (config.num_y).split(',') ],
-				b = [float(b) for b in (config.den_y).split(',') ],
-				), 
-			z = getattr(Controllers, controller_type)( 
-				Kp = config.proportional_z,
-				Kd = config.derivative_z,
-				Ki = config.integral_z,
-				a = [float(a) for a in (config.num_z).split(',') ],
-				b = [float(b) for b in (config.den_z).split(',') ],
-				), 
-			yaw = getattr(Controllers, controller_type)( 
-				Kp = config.proportional_yaw,
-				Kd = config.derivative_yaw,
-				Ki = config.integral_yaw,
-				a = [float(a) for a in (config.num_yaw).split(',') ],
-				b = [float(b) for b in (config.den_yaw).split(',') ],
-				periodic = True
-				), 
-			)
+	
+	def configure_controller(self, config, level):
+		controller_type = config.type 
+		controller_direction = config.direction
+
+		if config.direction in self.controller.keys():
+			changed = True
+			if 'PID' in controller_type:
+				 
+				self.controller[controller_direction] = getattr(Controllers, controller_type)( 
+					Kp = config.proportional,
+					Kd = config.derivative,
+					Ki = config.integral, 
+					periodic = (controller_direction == 'yaw')
+					)
+			elif 'Zero-Pole Gain' in controller_type:
+				self.controller[controller_direction] = Controllers.ZPK( 
+					[float(a) for a in config.zeros.split(',')],
+					[float(a) for a in config.poles.split(',')],
+					gain = float( config.gain ), 
+					periodic = (controller_direction == 'yaw')
+					)
+			elif 'Transfer Function' in controller_type:
+				self.controller[controller_direction] = Controllers.TF( 
+					[float(a) for a in config.numerator.split(',')],
+					[float(a) for a in config.denominator.split(',')],
+					periodic = (controller_direction == 'yaw')
+					)
+			else:
+				changed = False
+
+			if changed:
+				rospy.logwarn("\nController Configuration Changed! \nFor Safety Reasons it will Deactivate, please reactivate manually!")
+				rospy.logwarn('\nNew Controller is {0} in direction {1}'.format(config.type, config.direction))
+				rospy.logwarn('\n Controller has {0}'.format( str(self.controller[config.direction]) ))
+				self.controller_state = False
+		
+
 		return config 
-	"""
 
 	def update_callback_time( self, callback_name ):
 		aux_time = rospy.get_time()
@@ -101,17 +109,20 @@ class Controller(Quadrotor, object):
 				odometry.pose.pose.orientation.w
 				)
 
-		if type(self.controller) == Controllers.TrajectoryPID:
-			getattr( self.controller['x'], method_str)( odometry.pose.pose.position.x, odometry.twist.twist.linear.x, dt )
-			getattr( self.controller['y'], method_str)( odometry.pose.pose.position.y, odometry.twist.twist.linear.y, dt )
-			getattr( self.controller['z'], method_str)( odometry.pose.pose.position.z, odometry.twist.twist.linear.z, dt )
-			getattr( self.controller['yaw'], method_str)( euler_dict['yaw'], odometry.twist.twist.angular.z, dt )
-
-		else:
-			getattr( self.controller['x'], method_str)( odometry.pose.pose.position.x, dt )
-			getattr( self.controller['y'], method_str)( odometry.pose.pose.position.y, dt )
-			getattr( self.controller['z'], method_str)( odometry.pose.pose.position.z, dt )
-			getattr( self.controller['yaw'], method_str)( euler_dict['yaw'], dt )
+		for key, siso_controller in self.controller.items():
+			if type(siso_controller) == Controllers.TrajectoryPID:
+				getattr( siso_controller, method_str)( 
+					getattr(odometry.pose.pose.position, key) if key is not 'yaw' else euler_dict['yaw'],
+					getattr(odometry.twist.twist.linear, key) if key is not 'yaw' else odometry.twist.twist.angular.z,
+					dt )
+			elif type(siso_controller) == Controllers.PID:
+				getattr( siso_controller, method_str)( 
+					getattr(odometry.pose.pose.position, key) if key is not 'yaw' else euler_dict['yaw'],
+					dt )
+			else:
+				getattr( siso_controller, method_str)( 
+					getattr(odometry.pose.pose.position, key) if key is not 'yaw' else euler_dict['yaw'] 
+					)
 
 	def recieve_estimation( self, odometry ):
 		self.recieve_odometry( odometry, 'input_measurement', self.update_callback_time( inspect.stack()[0][3] ) )
@@ -166,68 +177,9 @@ class Controller(Quadrotor, object):
 				velocity[key] = siso_controller.get_output()
 			self.commander.velocity( velocity )
 
-class ControllerDynamicReconfigure(object):
-	"""docstring for ControllerDynamicReconfigure"""
-	def __init__(self):
-		super(ControllerDynamicReconfigure, self).__init__()
-		self.controller = Controller( controller = dict() )
-		self.srv = Server(ControllerConfig, self.restart )
-
-	def restart(self, config, level):
-		for timer_object in self.controller.timer.values():
-			timer_object.shutdown()
-		for subscriber_object in self.controller.subscriber.values():
-			subscriber_object.unregister()
-
-		controller_type = config.type
-		controller = dict( 
-			x = getattr(Controllers, controller_type)( 
-				Kp = config.proportional_x,
-				Kd = config.derivative_x,
-				Ki = config.integral_x,
-				a = [float(a) for a in (config.num_x).split(',') ],
-				b = [float(b) for b in (config.den_x).split(',') ],
-				), 
-			y = getattr(Controllers, controller_type)( 
-				Kp = config.proportional_y,
-				Kd = config.derivative_y,
-				Ki = config.integral_y,
-				a = [float(a) for a in (config.num_y).split(',') ],
-				b = [float(b) for b in (config.den_y).split(',') ],
-				), 
-			z = getattr(Controllers, controller_type)( 
-				Kp = config.proportional_z,
-				Kd = config.derivative_z,
-				Ki = config.integral_z,
-				a = [float(a) for a in (config.num_z).split(',') ],
-				b = [float(b) for b in (config.den_z).split(',') ],
-				), 
-			yaw = getattr(Controllers, controller_type)( 
-				Kp = config.proportional_yaw,
-				Kd = config.derivative_yaw,
-				Ki = config.integral_yaw,
-				a = [float(a) for a in (config.num_yaw).split(',') ],
-				b = [float(b) for b in (config.den_yaw).split(',') ],
-				periodic = True
-				), 
-			)
-		
-		
-		rospy.logwarn("\nController Configuration Changed! \nFor Safety Reasons it will Deactivate, please reactivate manually!")
-		rospy.logwarn('\nNew Controller is {0}'.format(config.type))
-		rospy.logwarn('\n X Controller has {0}'.format( str(controller['x']) ))
-		rospy.logwarn('\n Y Controller has {0}'.format( str(controller['y']) ))
-		rospy.logwarn('\n Z Controller has {0}'.format( str(controller['z']) ))
-		rospy.logwarn('\n Yaw Controller has {0}'.format( str(controller['yaw']) ))
-
-		#print es joda
-		self.controller = Controller(controller = controller)
-
-		return config 
-
 def main():
 	rospy.init_node('ardrone_controller', anonymous = True)
-	ControllerDynamicReconfigure()
+	Controller()
 	rospy.spin()
 
 if __name__ == "__main__": main()

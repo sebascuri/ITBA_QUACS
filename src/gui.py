@@ -27,7 +27,6 @@ from collections import deque, OrderedDict
 import imp
 from functools import partial
 import numpy as np 
-from scipy import signal 
 
 import inspect
 
@@ -189,26 +188,20 @@ class ControllerSetupWizard(QtGui.QWizard):
 		self.controller = dict()
 
 		self.pageList = [ ' ',
-			'Intro', 'ControllerType', 
-			'Xpid', 'Ypid','Zpid','Yawpid',
-			'Xzpk', 'Yzpk','Zzpk','Yawzpk',
+			'Intro', 'ControllerType', 'PID', 'ZPK', 'TF', 
 			'Conclusion'
 		]
 
+
 		self.controller_type = "PID"
+		self.direction = 'x'
 
 		self.createIntroPage( self.pageList.index('Intro') )
 		self.createControllerTypePage( self.pageList.index('ControllerType') )
+		self.createPIDGainsPage(self.pageList.index('PID'))
+		self.createZPKPage(self.pageList.index('ZPK'))
+		self.createTFPage(self.pageList.index('TF'))
 
-		self.createPIDGainsPage(self.pageList.index('Xpid'), 'X' )
-		self.createPIDGainsPage(self.pageList.index('Ypid'), 'Y' )
-		self.createPIDGainsPage(self.pageList.index('Zpid'), 'Z' )
-		self.createPIDGainsPage(self.pageList.index('Yawpid'), 'Yaw' )
-
-		self.createZPKPage( self.pageList.index('Xzpk') , 'X')
-		self.createZPKPage( self.pageList.index('Yzpk'), 'Y')
-		self.createZPKPage( self.pageList.index('Zzpk'), 'Z')
-		self.createZPKPage( self.pageList.index('Yawzpk'), 'Yaw')
 
 		self.createConclusionPage( self.pageList.index('Conclusion') )
 
@@ -236,72 +229,98 @@ class ControllerSetupWizard(QtGui.QWizard):
 		self.pages['controllerType'] = QtGui.QWizardPage()
 		self.pages['controllerType'].setTitle("Controller Type")
 
-		combo = QtGui.QComboBox(self); 
-		combo.addItems( [ "PID", "TrajectoryPID", "Digital"] ); 
-		combo.activated[str].connect( self.onControllerSelect )
+		comboType = QtGui.QComboBox(self); 
+		comboType.addItems( [ "PID", "TrajectoryPID", "Zero-Pole Gain", "Transfer Function"] ); 
+		comboType.activated[str].connect( self.onControllerSelect )
+
+		comboDir = QtGui.QComboBox(self); 
+		comboDir.addItems( [ "x", "y", "z ", "yaw"] ); 
+		comboDir.activated[str].connect( self.onDirectionSelect )
 
 		layout = QtGui.QVBoxLayout()
-		layout.addWidget(combo)
+		layout.addWidget(comboType)
+		layout.addWidget(comboDir)
 		self.pages['controllerType'].setLayout(layout)
 
 		self.setPage(page_num, self.pages['controllerType'] )
 
-	def createPIDGainsPage( self, page_num, variable  ):
-		self.pages['controllerGains'+variable] = QtGui.QWizardPage()
-		self.pages['controllerGains'+variable].setTitle(variable + " Controller Gains")
+	def createPIDGainsPage( self, page_num   ):
+		self.pages['pidGains'] = QtGui.QWizardPage()
+		self.pages['pidGains'].setTitle( " PID Gains")
 
-		self.gains[variable] = dict()
-		self.gains[variable]['P'] = QtGui.QSlider(QtCore.Qt.Horizontal, self)
-		self.gains[variable]['I'] = QtGui.QSlider(QtCore.Qt.Horizontal, self)
-		self.gains[variable]['D'] = QtGui.QSlider(QtCore.Qt.Horizontal, self)
+		self.gains = dict()
+		self.gains['proportional'] = QtGui.QSlider(QtCore.Qt.Horizontal, self)
+		self.gains['integral'] = QtGui.QSlider(QtCore.Qt.Horizontal, self)
+		self.gains['derivative'] = QtGui.QSlider(QtCore.Qt.Horizontal, self)
 
-		self.gain_values[variable] = dict()
-		for key, slider in self.gains[variable].items():
-			self.gain_values[variable][key] = QtGui.QLabel( str(0.01*float(slider.value())) )
+		self.gain_values = dict()
+		for key, slider in self.gains.items():
+			self.gain_values[key] = QtGui.QLabel( str(0.01*float(slider.value())) )
 		
 
 		layout = QtGui.QGridLayout()
 		i = 0
-		for key, slider in self.gains[variable].items():
+		for key, slider in self.gains.items():
 			slider.setMaximum(2000)
 			slider.setMinimum(0)
-			label = self.gain_values[variable][key]
+			label = self.gain_values[key]
 			layout.addWidget(QtGui.QLabel(key), i, 0)
 			layout.addWidget(slider,i, 1)
-			slider.valueChanged[int].connect(lambda: self.changeGain( variable ) )
+			slider.valueChanged[int].connect( self.changeGain )
 
-			layout.addWidget(self.gain_values[variable][key], i, 2)
+			layout.addWidget(self.gain_values[key], i, 2)
 			i += 1
 
-		self.pages['controllerGains'+variable].setLayout(layout)
+		self.pages['pidGains' ].setLayout(layout)
 
-		self.setPage(page_num, self.pages['controllerGains'+variable] )
+		self.setPage(page_num, self.pages['pidGains' ] )
 
-	def createZPKPage( self, page_num, variable ):
-		self.pages['zpkPage'+variable] = QtGui.QWizardPage()
-		self.pages['zpkPage'+variable].setTitle(variable + " Controller Zero-Poal Gain Configuration")
+	def createZPKPage( self, page_num):
+		self.pages['zpkPage'] = QtGui.QWizardPage()
+		self.pages['zpkPage'].setTitle(" Controller Zero-Pole Gain Configuration")
 		
-		self.lineEdit[variable] = dict()
-		self.lineEdit[variable]['K'] = QtGui.QLineEdit("2.25")
-		self.lineEditLabel['K'] = QtGui.QLabel("Insert Gain")
+		self.lineEdit['zpk'] = dict()
+		self.lineEdit['zpk']['gain'] = QtGui.QLineEdit("2.25")
+		self.lineEditLabel['gain'] = QtGui.QLabel("Insert <b>Gain</b>")
 
-		self.lineEdit[variable]['Z'] = QtGui.QLineEdit("1.15, -0.83")
-		self.lineEditLabel['Z'] = QtGui.QLabel("Insert Zeros separated by commas")
+		self.lineEdit['zpk']['zeros'] = QtGui.QLineEdit("1.15, -0.83")
+		self.lineEditLabel['zeros'] = QtGui.QLabel("Insert <b>Zeros</b> separated by commas")
 
-		self.lineEdit[variable]['P'] = QtGui.QLineEdit("0.331, -0.14, 0.17")
-		self.lineEditLabel['P'] = QtGui.QLabel("Insert Poles separated by commas")
+		self.lineEdit['zpk']['poles'] = QtGui.QLineEdit("0.331, -0.14, 0.17")
+		self.lineEditLabel['poles'] = QtGui.QLabel("Insert <b>Poles</b> separated by commas")
 
 
 		layout = QtGui.QGridLayout()
 		i = 0
-		for attribute, lineEdit in self.lineEdit[variable].items():
+		for attribute, lineEdit in self.lineEdit['zpk'].items():
 			layout.addWidget( self.lineEditLabel[attribute], i, 0 )
 			layout.addWidget( lineEdit, i, 1 )
 			i+=1
 
-		self.pages['zpkPage'+variable].setLayout(layout)
+		self.pages['zpkPage'].setLayout(layout)
 
-		self.setPage( page_num, self.pages['zpkPage'+variable] )
+		self.setPage( page_num, self.pages['zpkPage'] )
+
+	def createTFPage( self, page_num ):
+		self.pages['tfPage'] = QtGui.QWizardPage()
+		self.pages['tfPage'].setTitle("Transfer Function Controller Setup")
+
+		self.lineEdit['tf'] = dict()
+		self.lineEdit['tf']['numerator'] = QtGui.QLineEdit("1.15, -0.83")
+		self.lineEditLabel['numerator'] = QtGui.QLabel("Insert <b>numerator</b> coefficients separated by commas")
+
+		self.lineEdit['tf']['denominator'] = QtGui.QLineEdit("0.331, -0.14, 0.17")
+		self.lineEditLabel['denominator'] = QtGui.QLabel("Insert <b>denominator</b> coefficients separated by commas")
+
+
+		layout = QtGui.QVBoxLayout()
+		for attribute, lineEdit in self.lineEdit['tf'].items():
+			layout.addWidget( self.lineEditLabel[attribute] )
+			layout.addWidget( lineEdit )
+
+		self.pages['tfPage'].setLayout(layout)
+
+		self.setPage( page_num, self.pages['tfPage'] )
 
 	def createConclusionPage(self, page_num):
 		self.pages['conclusion'] = QtGui.QWizardPage()
@@ -317,20 +336,25 @@ class ControllerSetupWizard(QtGui.QWizard):
 		self.setPage( page_num, self.pages['conclusion'] )
 
 	def onControllerSelect(self, controller):
-		self.controller_type = controller 
+		self.controller_type = str(controller )
 
-	def changeGain(self, variable):
-		for key, slider in self.gains[variable].items():
-			self.gain_values[variable][key].setText( str(0.01*float(slider.value())) ) 
+	def onDirectionSelect(self, direction):
+		self.direction = str(direction)
+
+	def changeGain(self):
+		for key, slider in self.gains.items():
+			self.gain_values[key].setText( str(0.01*float(slider.value())) ) 
 
 	def nextId( self ):
 		current = self.currentId() 
 		if current == self.pageList.index('ControllerType'):
 			if 'PID' in self.controller_type:
-				return self.pageList.index('Xpid')
+				return self.pageList.index('PID')
+			elif 'Transfer Function' in self.controller_type:
+				return self.pageList.index('TF')
 			else:
-				return self.pageList.index('Xzpk')
-		elif current == self.pageList.index('Yawpid'):
+				return self.pageList.index('ZPK')
+		elif current == self.pageList.index('PID') or current == self.pageList.index('ZPK') or current == self.pageList.index('TF'):
 			return self.pageList.index('Conclusion')
 		elif current == self.pageList.index('Conclusion'):
 			return -1
@@ -338,39 +362,21 @@ class ControllerSetupWizard(QtGui.QWizard):
 			return current + 1 
 
 	def getControllers( self ):
-		self.controller['X'] = dict()
-		self.controller['Y'] = dict()
-		self.controller['Z'] = dict()
-		self.controller['Yaw'] = dict()
-
+		parameter = dict()
 		if 'PID' in self.controller_type:
-			for controller_key in self.controller.keys():
-				for parameter, slider in self.gains[controller_key].items():
-					self.controller[controller_key][parameter] = 0.01*float(slider.value())
-		else:
-			for controller_key in self.controller.keys():
-				for parameter, lineEdit in self.lineEdit[controller_key].items():
-					self.controller[controller_key][parameter] = [float(a) for a in str(lineEdit.text().simplified() ).split(',') ] 
-				self.controller[controller_key] = self.zpk2numden( self.controller[controller_key] )
+			for gain, slider in self.gains.items():
+				parameter[gain] = 0.01*float(slider.value())
+		elif 'Zero-Pole Gain' == self.controller_type:
+			for attribute, line_edit in self.lineEdit['zpk'].items():
+				parameter[attribute] = str( line_edit.text().simplified() )
+		elif 'Transfer Function' == self.controller_type:
+			for attribute, line_edit in self.lineEdit['tf'].items():
+				parameter[attribute] = str( line_edit.text().simplified() )
 
-
-		return self.controller
-
-	def zpk2numden(self, controller):
-		new_controller = dict()
-		gain = controller['K']
-		zeros = controller['Z']
-		poles = controller['P']
-
-		b,a = signal.zpk2tf(zeros, poles, gain)
-
-		new_controller['num'] = str( list( b ) ) [1:-1]
-		new_controller['den'] = str( list( a ) ) [1:-1] 
-
-		return new_controller 
+		return parameter 
 
 	def getValues( self ):
-		return self.controller_type, self.getControllers(), self.ok 
+		return self.controller_type, self.direction, self.getControllers(), self.ok
 
 	def onFinish( self ):
 		self.ok = True
@@ -980,7 +986,7 @@ class MainWindow(QtGui.QMainWindow, object):
 		self.radioButtons['controlSource']['PS2']  = QtGui.QRadioButton("Regular Jostick", self.groupBox['controlSource'], clicked=self.onControlSource)
 		#self.radioButtons['Wii']  = QtGui.QRadioButton("Wii Joystick", self.controlSourceGroup)
 		self.radioButtons['controlSource']['keyboard']  = QtGui.QRadioButton("Keyboard", self.groupBox['controlSource'], clicked=self.onControlSource)
-		self.radioButtons['controlSource']['textFile']  = QtGui.QRadioButton("Text File", self.groupBox['controlSource'], clicked=self.onControlSource)
+		self.radioButtons['controlSource']['textFile']  = QtGui.QRadioButton("Text File Way Points", self.groupBox['controlSource'], clicked=self.onControlSource)
 		self.radioButtons['controlSource']['function']  = QtGui.QRadioButton("Python Function", self.groupBox['controlSource'], clicked=self.onControlSource)
 		self.radioButtons['controlSource']['dialog']  = QtGui.QRadioButton("Dialog Window", self.groupBox['controlSource'], clicked=self.onControlSource)
 
@@ -1052,14 +1058,15 @@ class MainWindow(QtGui.QMainWindow, object):
 
 		self.actions['file']['record'] = dict()
 		self.actions['file']['record']['navdata'] = QtGui.QAction( "Record &Navdata", self,checkable=True, triggered=partial(self.recordVar, "record_navdata", 'navdata' ))
-		self.actions['file']['record']['cmdVel'] = QtGui.QAction( "Record Command &Velocity", self,checkable=True, triggered=partial(self.recordVar, "record_cmd_vel", 'cmdVel' ))
+		self.actions['file']['record']['cmd_vel'] = QtGui.QAction( "Record Command &Velocity", self,checkable=True, triggered=partial(self.recordVar, "record_cmd_vel", 'cmd_vel' ))
 		self.actions['file']['record']['imu'] = QtGui.QAction( "Record &Imu", self,checkable=True, triggered=partial(self.recordVar, "record_imu", 'imu' )) 
 		self.actions['file']['record']['image'] = QtGui.QAction( "Record &Image", self,checkable=True, triggered=partial(self.recordVar, "record_image", 'image'))
 		self.actions['file']['record']['sonar'] = QtGui.QAction( "Record &Sonar", self,checkable=True, triggered=partial(self.recordVar, "record_sonar", 'sonar'))
 		self.actions['file']['record']['mag'] = QtGui.QAction( "Record &Magnetometer", self,checkable=True, triggered=partial(self.recordVar, "record_mag", 'mag'))
 		self.actions['file']['record']['gps'] = QtGui.QAction( "Record &GPS", self,checkable=True, triggered=partial(self.recordVar, "record_gps", 'gps'))
-		self.actions['file']['record']['estimation'] = QtGui.QAction( "Record &Estimation", self,checkable=True, triggered=partial(self.recordVar, "record_sensorfusion", 'estimation'))
+		self.actions['file']['record']['sensorfusion'] = QtGui.QAction( "Record &Estimation", self,checkable=True, triggered=partial(self.recordVar, "record_sensorfusion", 'sensorfusion'))
 		self.actions['file']['record']['trajectory'] = QtGui.QAction( "Record Commanded &Trajectory", self,checkable=True, triggered=partial(self.recordVar, "record_trajectory", 'trajectory'))
+		self.actions['file']['record']['recordAll'] = QtGui.QAction( "Record &All", self,checkable=True, triggered=self.recordAll)
 
 		for action in self.actions['file']['record'].values():
 			recordMenu.addAction( action )
@@ -1074,6 +1081,8 @@ class MainWindow(QtGui.QMainWindow, object):
 		self.actions['setUp']['shell']  = QtGui.QAction( "&Select Shell", self, triggered=self.selectShell)
 		self.actions['setUp']['recordUSB']  = QtGui.QAction( "&Record USB Enable", self,checkable=True)
 		self.actions['setUp']['recordUSB'].triggered.connect(lambda: self.commander.record( self.actions['recordUSB'].isChecked() ) )
+		self.actions['setUp']['controllerWizard'] = QtGui.QAction( "Controller Wizard", self, triggered=self.selectControllerWizard )		
+		self.actions['setUp']['controllerWizard'].setShortcut('Ctrl+C+W')
 		#self.actions['setUp']['toggleCam']  = QtGui.QAction( "&Toggle Camera", self,checkable=False, triggered=self.onToggleCam )
 
 		
@@ -1090,12 +1099,11 @@ class MainWindow(QtGui.QMainWindow, object):
 		self.actions['animation']['ledAnimation'] = QtGui.QAction( "&Led Animation", self, triggered=self.selectLedAnimation )
 		self.actions['animation']['flightAnimation']  = QtGui.QAction( "&Flight Animation", self, triggered=self.selectFlightAnimation )
 
-
+		"""
 		self.menus['controller'] = menubar.addMenu('Controller')
 		self.actions['controller'] = dict()
-		self.actions['controller']['controlType'] = QtGui.QAction( "&Control Type", self, triggered=self.selectControlType )
-		self.actions['controller']['controllerWizard'] = QtGui.QAction( "Controller Wizard", self, triggered=self.selectControllerWizard )		
-
+		#self.actions['controller']['controlType'] = QtGui.QAction( "&Control Type", self, triggered=self.selectControlType )
+		"""
 		self.menus['command'] = menubar.addMenu('Command')
 		self.actions['command'] = dict()
 		
@@ -1287,54 +1295,12 @@ class MainWindow(QtGui.QMainWindow, object):
 		if ok:
 			 self.commander.flight_animation( flight_animation, 0)
 
-	def selectControlType( self, controller ):
-		control_list = [ "position", "velocity local", "velocity global"]
-		control_type, ok = QtGui.QInputDialog.getItem(self, "Select Control Method", "List:", control_list, 0, False)
-	
-		if ok:
-			if control_type == control_list[0]:
-				self.commander.control_on()
-			else:
-				self.commander.control_off()
-				if control_type == control_list[1]:
-					self.commander.local_command_frame()
-				elif control_type == control_list[2]:
-					self.commander.global_command_frame()
-
 	def selectControllerWizard( self ):
-		controller_type, parameters, ok = ControllerSetupWizard().getValues()
+		controller_type, direction, parameters, ok = ControllerSetupWizard().getValues()
+		
 		if ok:
-			params = {'type': controller_type}
-
-			if 'PID' in controller_type:
-				params.update( 
-					proportional_x= parameters['X']['P'], 
-					proportional_y= parameters['Y']['P'],
-					proportional_z= parameters['Z']['P'],
-					proportional_yaw= parameters['Yaw']['P'],
-					derivative_x= parameters['X']['D'], 
-					derivative_y= parameters['Y']['D'],
-					derivative_z= parameters['Z']['D'],
-					derivative_yaw= parameters['Yaw']['D'],
-					integral_x= parameters['X']['I'], 
-					integral_y= parameters['Y']['I'],
-					integral_z= parameters['Z']['I'],
-					integral_yaw= parameters['Yaw']['I'],
-				)
-			else:
-				params.update(
-					num_x= parameters['X']['num'], 
-					num_y= parameters['Y']['num'],
-					num_z= parameters['Z']['num'],
-					num_yaw= parameters['Yaw']['num'],
-					den_x= parameters['X']['den'], 
-					den_y= parameters['Y']['den'],
-					den_z= parameters['Z']['den'],
-					den_yaw= parameters['Yaw']['den'],
-				) 
-
-			self.commander.control_off()
-
+			params = {'type': controller_type, 'direction': direction}
+			params.update(parameters)
 			config = self.client['controller'].update_configuration(params)
 
 	def selectChirp( self ):
@@ -1399,6 +1365,19 @@ class MainWindow(QtGui.QMainWindow, object):
 			self.rosLauncher.launch_node( node, scriptName )
 		else:
 			self.rosLauncher.kill_node( scriptName )
+
+	def recordAll( self ):
+		if self.actions['file']['record']['recordAll'].isChecked():
+			for key, action in self.actions['file']['record'].items():
+				if key is not 'recordAll':
+					action.setChecked(True)
+					self.recordVar( 'record_{0}'.format(key), key )
+
+		else:
+			for key, action in self.actions['file']['record'].items():
+				if key is not 'recordAll':
+					action.setChecked(False)
+					self.recordVar( 'record_{0}'.format(key), key )
 
 	def unSelectRadioButtons( self, group_name ):
 		self.radioButtons['groups'][group_name].setExclusive(False)
