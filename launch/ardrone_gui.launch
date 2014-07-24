@@ -5,7 +5,9 @@
 <!-- rosrun gui -->
 <node name="ardrone_gui" pkg="ardrone_control" type="gui.py" respawn="false" output="screen" required="true"/>
 <!-- rosrun controller -->
-<node name="controller" pkg="ardrone_control" type="controller.py" respawn="false" output="screen" />	
+<node name="controller" pkg="ardrone_control" type="controller.py" respawn="false" output="screen" >
+	<rosparam file="$(find ardrone_control)/parameters/PID_Parameters.yaml" command="load" />
+</node> 		
 <!-- rosrun state_estimation -->
 <node name="state_estimation" pkg="ardrone_control" type="state_estimation.py" respawn="false" output="screen" >
 	<rosparam file="$(find ardrone_control)/parameters/Filter_Parameters.yaml" command="load" />

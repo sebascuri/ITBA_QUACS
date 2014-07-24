@@ -25,15 +25,10 @@ class Controller(Quadrotor, object):
 	"""docstring for Controller"""
 	def __init__(self, **kwargs):
 		super(Controller, self).__init__(**kwargs)
-		self.controller = dict(
-			x = Controllers.PID( Kp =1.0 ),
-			y = Controllers.PID( Kp =1.0 ),
-			z = Controllers.PID( Kp =1.0 ),
-			yaw = Controllers.PID( Kp =1.0, periodic = True)
-			)
+		self.default_init()
 		self.srv = Server(ControllerConfig, self.configure_controller )
 
-		self.controller_state = False
+		#self.controller_state = False
 
 		self.subscriber = dict(
 			estimated_pose = rospy.Subscriber('ardrone/estimated_pose', Odometry, callback = self.recieve_estimation),
@@ -91,9 +86,50 @@ class Controller(Quadrotor, object):
 				rospy.logwarn('\nNew Controller is {0} in direction {1}'.format(config.type, config.direction))
 				rospy.logwarn('\n Controller has {0}'.format( str(self.controller[config.direction]) ))
 				self.controller_state = False
-		
+			
+
 
 		return config 
+
+	def default_init(self):
+		self.controller_state = False
+		PID_PARAMS = rospy.get_param( '/controller/PID_Gains' )
+		self.controller = dict()
+		for key, controller_dict in PID_PARAMS.items():
+			self.controller[ key.lower() ] = Controllers.PID( 
+				Kp = controller_dict['P'],
+				Ki = controller_dict['I'],
+				Kd = controller_dict['D'],
+				)
+		self.controller['yaw'].periodic = True
+
+
+		"""
+		self.controller = dict(
+			x = Controllers.PID( 
+				Kp =PID_PARAMS['X']['P'],
+				Ki =PID_PARAMS['X']['I'],
+				Kd =PID_PARAMS['X']['D'],
+				),
+			y = Controllers.PID( 
+				Kp =PID_PARAMS['Y']['P'],
+				Ki =PID_PARAMS['Y']['I'],
+				Kd =PID_PARAMS['Y']['D'], ),
+			z = Controllers.PID( 
+				Kp =PID_PARAMS['Z']['P'],
+				Ki =PID_PARAMS['Z']['I'],
+				Kd =PID_PARAMS['Z']['D'],),
+			yaw = Controllers.PID( 
+				Kp =PID_PARAMS['Yaw']['P'],
+				Ki =PID_PARAMS['Yaw']['I'],
+				Kd =PID_PARAMS['Yaw']['D'],
+				periodic = True)
+			)
+		"""
+		rospy.logwarn("\nController Configuration Inited by Default to:\nX Controller is type PID with {0} \nY Controller is type PID with {1}\nZ Controller is type PID with {2} \nYaw Controller is type PID with {3} ".format(
+			str(self.controller['x']), str(self.controller['y']), str(self.controller['z']), str(self.controller['yaw']) ) )
+
+		self.controller_state = False
 
 	def update_callback_time( self, callback_name ):
 		aux_time = rospy.get_time()
@@ -111,18 +147,30 @@ class Controller(Quadrotor, object):
 
 		for key, siso_controller in self.controller.items():
 			if type(siso_controller) == Controllers.TrajectoryPID:
-				getattr( siso_controller, method_str)( 
-					getattr(odometry.pose.pose.position, key) if key is not 'yaw' else euler_dict['yaw'],
-					getattr(odometry.twist.twist.linear, key) if key is not 'yaw' else odometry.twist.twist.angular.z,
-					dt )
+				if key != 'yaw':
+					getattr( siso_controller, method_str)( 
+						getattr(odometry.pose.pose.position, key), 
+						getattr(odometry.twist.twist.linear, key),
+						dt 
+						) 
+				else:
+					getattr( siso_controller, method_str)( 
+						euler_dict['yaw'],
+						odometry.twist.twist.angular.z,
+						dt 
+						) 
+
+
 			elif type(siso_controller) == Controllers.PID:
-				getattr( siso_controller, method_str)( 
-					getattr(odometry.pose.pose.position, key) if key is not 'yaw' else euler_dict['yaw'],
-					dt )
+				if key != 'yaw':
+					getattr( siso_controller, method_str)(  getattr(odometry.pose.pose.position, key),  dt ) 
+				else:
+					getattr( siso_controller, method_str)( euler_dict['yaw'], dt ) 
 			else:
-				getattr( siso_controller, method_str)( 
-					getattr(odometry.pose.pose.position, key) if key is not 'yaw' else euler_dict['yaw'] 
-					)
+				if key != 'yaw':
+					getattr( siso_controller, method_str)( getattr(odometry.pose.pose.position, key) )
+				else:
+					getattr( siso_controller, method_str)( euler_dict['yaw'] ) 
 
 	def recieve_estimation( self, odometry ):
 		self.recieve_odometry( odometry, 'input_measurement', self.update_callback_time( inspect.stack()[0][3] ) )
