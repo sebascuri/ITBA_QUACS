@@ -60,6 +60,8 @@ class StateEstimation(Quadrotor, object):
 			recieve_sonar = now_time,
 			recieve_bottom_camera = now_time,
 			)
+
+		self.srv = Server(InitialConditionsConfig, self.restart )
 	
 	def publish_estimation(self, time):
 		#publish estimated pose
@@ -168,41 +170,29 @@ class StateEstimation(Quadrotor, object):
 
 		return navdata 
 
-class StateEstimationDynamicReconfigure(object):
-	"""docstring for ROS"""
-	def __init__(self):
-		super(StateEstimationDynamicReconfigure, self).__init__()
-		self.state_estimation = StateEstimation()
-		self.srv = Server(InitialConditionsConfig, self.restart )
+	def restart( self, config, level ):
+		self.name = config.name 
+		self.position = dict( x = config.x, y = config.y, z = config.z, yaw = config.yaw, pitch = 0., roll = 0.)
+		self.orientation = Quaternion().set_euler( dict(yaw = config.yaw, pitch = 0.0, roll = 0.0) )
+		self.velocity = dict( x = 0., y = 0., z = 0., yaw = 0., pitch = 0., roll = 0.)
+		self.state = 'Unknown'
+		self.battery = 100
 
-	def restart(self, config, level):
-		for timer_object in self.state_estimation.timer.values():
-			timer_object.shutdown()
-		for subscriber_object in self.state_estimation.subscriber.values():
-			subscriber_object.unregister()
-
-		name = config.name
-		position = dict( x = config.x, y = config.y, z = config.z, yaw = config.yaw, pitch = 0., roll = 0.)
-		orientation = Quaternion().set_euler( dict(yaw = config.yaw, pitch = 0.0, roll = 0.0) )
-		velocity = dict( x = 0., y = 0., z = 0., yaw = 0., pitch = 0., roll = 0.)
-		state = 'Unknown'
-		battery = 100
-
-		sensors = dict()
+		self.sensors = dict()
 		if config.Accelerometer:
-			sensors['accelerometer'] = Sensors.Accelerometer()
+			self.sensors['accelerometer'] = Sensors.Accelerometer()
 		if config.Gyroscope:
-			sensors['gyroscope'] = Sensors.Gyroscope()
+			self.sensors['gyroscope'] = Sensors.Gyroscope()
 		if config.Magnetometer:
-			sensors['magnetometer'] = Sensors.Magnetometer()
+			self.sensors['magnetometer'] = Sensors.Magnetometer()
 		if config.Range:
 			sensors['range'] = Sensors.Range()
 		if config.GPS:
-			sensors['gps'] = Sensors.GPS()
+			self.sensors['gps'] = Sensors.GPS()
 		if config.Camera:
-			sensors['camera'] = Sensors.Camera()
+			self.sensors['camera'] = Sensors.Camera()
 
-		filters = dict( 
+		self.filters = dict( 
 			navdata = dict(), 
 			attitude = Filter.Magdwick( Beta = rospy.get_param( 'Magdwick', dict( Beta = 0.1) )['Beta'] ), 
 			# attitude = Filter.Mahoney( 	Kp = rospy.get_param( 'Mahoney', dict( Kp = 0.5) )['Kp'], 
@@ -215,9 +205,9 @@ class StateEstimationDynamicReconfigure(object):
 
 		navdata_filter_params = rospy.get_param( 'Navdata', dict() )
 		for key, values in navdata_filter_params.items():
-			filters['navdata'][key] = Filter.Digital( a = values['a'], b = values['b'] )
+			self.filters['navdata'][key] = Filter.Digital( a = values['a'], b = values['b'] )
 
-		
+		"""
 		self.state_estimation = StateEstimation( 
 			name = name,
 			position = position,
@@ -228,13 +218,15 @@ class StateEstimationDynamicReconfigure(object):
 			sensors = sensors,
 			filters = filters
 		)
+		"""
 
-		rospy.logwarn("\nRestarted State Estimation for drone {0} with: \nInitial Postion = {1}\nSensor List: {2}".format(name, position, sensors.keys()))
+		rospy.logwarn("\nRestarted State Estimation for drone {0} with: \nInitial Postion = {1}\nSensor List: {2}".format(
+			self.name, self.position, self.sensors.keys()))
 		return config
-		
+
 def main(argv):
 	rospy.init_node('state_estimation', anonymous = True)
-	StateEstimationDynamicReconfigure()
+	StateEstimation()
 
 	rospy.spin()
 
