@@ -8,6 +8,7 @@ from collections import deque
 import math
 
 from Quaternion import Quaternion
+from FilterHelpers import zpk2sos, tf2sos
 #import roslib; roslib.load_manifest('ardrone_control')
 
 #import tf
@@ -53,6 +54,35 @@ class Digital(object):
 		except IndexError:
 			return 0
 
+class SOSDigital(object):
+	"""docstring for SOSDigital"""
+	def __init__(self, sos_converter):
+		super(SOSDigital, self).__init__()
+		
+		self.filter = []
+		for num, den in sos_converter.get_transfer_functions():
+			self.filter.append( Digital( b = num, a = den) )
+
+	def set_input(self, new_input):
+		self.filter[0].set_input(new_input)
+		for i in range(1, len(self.filter)):
+			self.filter[i].set_input( self.filter[i-1].get_output() )
+
+		return self.filter[-1].get_output()
+
+	def get_output( self ):
+		return self.filter[-1].get_output()
+
+class ZPK(SOSDigital, object):
+	"""docstring for ZPK"""
+	def __init__(self, zeros, poles, gain, **kwargs):
+		super(ZPK, self).__init__( tf2sos(zeros, poles, gain) )
+		
+class TF(SOSDigital, object):
+	"""docstring for TF"""
+	def __init__(self, num, den, **kwargs):
+		super(TF, self).__init__( zpk2sos(num, den) )
+				
 class ExtendedKalman(object):
 	"""docstring for ExtendedKalmanFilter"""
 	def __init__(self, **kwargs):
@@ -165,9 +195,8 @@ class GPS_Odometry(ExtendedKalman, object):
 
 class Camera_Odometry(object):
 	"""docstring for Camera_Odometry"""
-	def __init__(self, arg):
+	def __init__(self):
 		super(Camera_Odometry, self).__init__()
-		self.arg = arg
 		
 class SO3(object):
 	"""docstring for SO3"""
@@ -268,8 +297,16 @@ class Mahoney(SO3, object):
 
 		
 def main():
-	pass 
-	
+	Digital()
+	ZPK( [1,1],[0.2,0.3],1 )
+	TF( [1,1],[0.2,0.3] )
+	ExtendedKalman()
+	Kalman()
+	GPS_Odometry()
+	Camera_Odometry()
+	SO3()
+	Magdwick()
+	Mahoney()
 
 
 if __name__ == '__main__': main()
