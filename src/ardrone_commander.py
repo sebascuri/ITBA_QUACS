@@ -72,9 +72,10 @@ class ArdroneCommander(Quadrotor, object):
 		elif self.state == ArDroneStates.Flying or self.state == ArDroneStates.Hovering: #flying or hovering
 			self.commander.velocity( self.velocity ) 
 			
-	def publish_controller_state( self, boolean ):
+	def publish_controller_state( self ):
 		msg = Bool()
-		msg.data = boolean 
+		msg.data = self.controller_state
+		rospy.logwarn("{0} Controller".format('Activating' if self.controller_state else 'Deactivating'))
 		self.publisher['controller_state'].publish(msg)
 
 	def publish_goal( self ):
@@ -210,14 +211,12 @@ class ArdroneCommander(Quadrotor, object):
 			self.velocity['yaw'] = scale;
 
 	def control_on( self, *args ):
-		rospy.logwarn("Control Activated")
 		self.controller_state = True 
-		self.publish_controller_state( self.controller_state )
+		self.publish_controller_state( )
 
 	def control_off( self, *args ):
-		rospy.logwarn("Control Deactivated")
 		self.controller_state = False 
-		self.publish_controller_state( self.controller_state )
+		self.publish_controller_state( )
 
 	def signal_init( self, signal_data ):
 		# inits signal

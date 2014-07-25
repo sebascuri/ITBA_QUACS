@@ -844,7 +844,7 @@ class MainWindow(QtGui.QMainWindow, object):
 
 		timer = QtCore.QTimer(self)
 		QtCore.QObject.connect(timer, QtCore.SIGNAL("timeout()"), self.update)
-		timer.start(200)
+		timer.start(100)
 	
 	def initMainLayout( self ):
 		mainWidget = QtGui.QWidget( self )
