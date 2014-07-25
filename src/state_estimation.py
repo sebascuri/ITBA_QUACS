@@ -111,9 +111,9 @@ class StateEstimation(Quadrotor, object):
 
 		navdata = self.filter_navdata( navdata ) #filter navdata
 		#set linear velocity
-		self.velocity['x'] = navdata.vx 
-		self.velocity['y'] = navdata.vy 
-		self.velocity['z'] = navdata.vz 
+		self.velocity['x'] = navdata.vx / 1000.0 
+		self.velocity['y'] = navdata.vy / 1000.0 
+		self.velocity['z'] = navdata.vz / 1000.0 
 
 		self.set_state(navdata.state) #set state
 		self.battery = navdata.batteryPercent #set battery % 
