@@ -108,7 +108,7 @@ class StateEstimation(Quadrotor, object):
 	def recieve_navdata(self, navdata):
 		dt = self.update_callback_time( inspect.stack()[0][3] )
 
-		navdata = self.filter_navdata( navdata ) #filter navdata
+		# navdata = self.filter_navdata( navdata ) #filter navdata
 		#set linear velocity
 		self.velocity['x'] = navdata.vx / 1000.0 
 		self.velocity['y'] = navdata.vy / 1000.0 
@@ -119,6 +119,8 @@ class StateEstimation(Quadrotor, object):
 		
 		#predict position update
 		self.position = self.filters['position'].predict( dt, self.position, self.velocity)
+
+		self.position['z'] = navdata.altd / 1000.0
 
 	def recieve_gps(self, gpsdata):
 		pass
