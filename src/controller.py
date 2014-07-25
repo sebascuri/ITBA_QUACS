@@ -10,6 +10,7 @@ from lib import QuadrotorCommands
 
 from nav_msgs.msg import Odometry 
 from diagnostic_msgs.msg import KeyValue
+from std_msgs.msg import Bool 
 
 from dynamic_reconfigure.server import Server
 from ardrone_control.cfg import ControllerConfig
@@ -33,7 +34,7 @@ class Controller(Quadrotor, object):
 		self.subscriber = dict(
 			estimated_pose = rospy.Subscriber('ardrone/estimated_pose', Odometry, callback = self.recieve_estimation),
 			desired_pose = rospy.Subscriber('ardrone/desired_pose', Odometry, callback = self.recieve_desired),
-			controller_state = rospy.Subscriber('ardrone/controller_state', KeyValue, callback = self.recieve_state),
+			controller_state = rospy.Subscriber('ardrone/controller_state', Bool, callback = self.recieve_state),
 		)
 
 		self.commander = QuadrotorCommands.Commands()
@@ -215,8 +216,9 @@ class Controller(Quadrotor, object):
 		# 	self.controller['z'].change_set_point( odometry.pose.pose.position.z )
 		# 	self.controller['yaw'].change_set_point( euler_dict['yaw'] )
 
-	def recieve_state( self, key_value ):
-		self.controller_state = bool( key_value.value )
+	def recieve_state( self, boolean ):
+		self.controller_state = boolean.data 
+		rospy.logwarn( 'Controller succesfully {0}activated!'.format( '' if self.controller_state else 'de' ) )
 
 	def publish_twist( self, time ):
 		if self.controller_state:

@@ -66,7 +66,6 @@ class StateEstimation(Quadrotor, object):
 	def publish_estimation(self, time):
 		#publish estimated pose
 		
-		#print self.orientation.get_euler()['yaw'], self.position.yaw, self.sensors['gps'].position.yaw
 		msg = Odometry( )
 		msg.header.stamp = rospy.Time.now()
 		msg.header.frame_id = "/nav"

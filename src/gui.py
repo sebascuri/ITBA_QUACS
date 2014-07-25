@@ -900,14 +900,14 @@ class MainWindow(QtGui.QMainWindow, object):
 		#self.infoLabel['generalInfo']['controller'] = QtGui.QLabel( "Controller Type: ")
 
 		self.radioButtons['controllerType'] = dict()
-		self.radioButtons['controlSource']['openLoop'] = QtGui.QRadioButton("Open Loop", self.groupBox['generalInfo'], clicked=self.onControllerSelect)
-		self.radioButtons['controlSource']['openLoop'].setChecked(not self.commander.controller_state)
-		self.radioButtons['controlSource']['closedLoop'] = QtGui.QRadioButton("Closed Loop", self.groupBox['generalInfo'], clicked=self.onControllerSelect)
-		self.radioButtons['controlSource']['closedLoop'].setChecked(self.commander.controller_state)
+		self.radioButtons['controllerType']['openLoop'] = QtGui.QRadioButton("Open Loop", self.groupBox['generalInfo'], clicked=self.onControllerSelect)
+		self.radioButtons['controllerType']['openLoop'].setChecked(not self.commander.controller_state)
+		self.radioButtons['controllerType']['closedLoop'] = QtGui.QRadioButton("Closed Loop", self.groupBox['generalInfo'], clicked=self.onControllerSelect)
+		self.radioButtons['controllerType']['closedLoop'].setChecked(self.commander.controller_state)
 
 		layout['generalInfo'].addWidget( self.infoLabel['generalInfo']['batteryPercent'] )
-		layout['generalInfo'].addWidget( self.radioButtons['controlSource']['openLoop'] )
-		layout['generalInfo'].addWidget( self.radioButtons['controlSource']['closedLoop'] )
+		layout['generalInfo'].addWidget( self.radioButtons['controllerType']['openLoop'] )
+		layout['generalInfo'].addWidget( self.radioButtons['controllerType']['closedLoop'] )
 
 
 		self.groupBox['velocity'] = QtGui.QGroupBox("Speed")
@@ -1052,7 +1052,8 @@ class MainWindow(QtGui.QMainWindow, object):
 		self.actions['file']['exit'] = QtGui.QAction(QtGui.QIcon('exit.png'), '&Exit', self)        
 		self.actions['file']['exit'].setShortcut('Ctrl+Q')
 		self.actions['file']['exit'].setStatusTip('Exit application')
-		self.actions['file']['exit'].triggered.connect(QtGui.qApp.quit)
+		self.actions['file']['exit'].triggered.connect(self._closeEvent)
+		#self.actions['file']['exit'].triggered.connect(QtGui.qApp.quit)
 
 		recordMenu = self.menus['file'].addMenu( "&Record" )
 
@@ -1130,7 +1131,6 @@ class MainWindow(QtGui.QMainWindow, object):
 		self.statusBar().addWidget( self.statusLabel ) 
 
 	def onArduino( self, action, clicked ):
-		print clicked
 		if action == 'start':
 			baud, port, ok  = ArduinoSetupDialog().getData( )
 			if ok:
@@ -1161,13 +1161,11 @@ class MainWindow(QtGui.QMainWindow, object):
 			self.commander.cam_select( 1 )
 		
 	def onControlSource( self ):
-		self.commander.joy = [ ]; self.killJoy( )
+		self.killJoy( )
 		if self.radioButtons['controlSource']['PS3'].isChecked():
 			self.commander.joy = PS3(); self.launchJoy( )
 		elif self.radioButtons['controlSource']['PS2'].isChecked():
 			self.commander.joy = PS2(); self.launchJoy( )
-		elif self.radioButtons['controlSource']['keyboard'].isChecked():
-			self.keyboardCommand = True 
 		elif self.radioButtons['controlSource']['function'].isChecked():
 			fileName = QtGui.QFileDialog.getOpenFileName(self,
 				"Select Trajectory Function", 
@@ -1197,9 +1195,7 @@ class MainWindow(QtGui.QMainWindow, object):
 				
 				self.wayPointStart( WayPoints(x,y,z,yaw) )
 			else:
-				self.unSelectRadioButtons('controlSource')
-
-			
+				self.unSelectRadioButtons('controlSource')	
 		elif self.radioButtons['controlSource']['dialog'].isChecked():
 			sp,ok = InputSetPointDialog().getValues()
 			if ok:
@@ -1209,11 +1205,13 @@ class MainWindow(QtGui.QMainWindow, object):
 				self.commander.yaw(sp[3] * math.pi/180.0)
 
 			self.unSelectRadioButtons('controlSource')
+		elif self.radioButtons['controlSource']['keyboard'].isChecked():
+			pass
 
 	def onControllerSelect( self ):
-		if self.radioButtons['controlSource']['openLoop'].isChecked():
+		if self.radioButtons['controllerType']['openLoop'].isChecked():
 			self.commander.control_off()
-		elif self.radioButtons['controlSource']['closedLoop'].isChecked():
+		elif self.radioButtons['controllerType']['closedLoop'].isChecked():
 			self.commander.control_on()
 
 	def onImuCalibration( self ):
@@ -1306,20 +1304,20 @@ class MainWindow(QtGui.QMainWindow, object):
 	def selectChirp( self ):
 		coordinate_list = ["x", "y", "z", "yaw"]
 		direction, ok = QtGui.QInputDialog.getItem(self, "Select Chirp Direction", "Coordinate", coordinate_list, 0, False)
+		direction = str(direction)
 		if ok:
-			self.signal_init( self.default_chirp_data(direction) ) 
-			self.plot.activatePlot( 'Velocity {0}'.format(direction) )
-			self.plot.activatePlot( 'Command Velocity {0}'.format(direction) )
+			self.commander.signal_init( self.commander.default_chirp_data(direction) )
+			self.plot.activePlots = [ 'Velocity {0}'.format(direction), 'Command Velocity {0}'.format(direction)] 
 			self.plot.createPlotHandles()
+			self.unSelectRadioButtons('controlSource')
 
 	def selectSignal( self ):
 		data, ok  = SignalSetupDialog().getData( )
-
 		if ok:
 			self.commander.signal_init( data )
-			self.plot.activatePlot( 'Velocity {0}'.format(data.direction) )
-			self.plot.activatePlot( 'Command Velocity {0}'.format(data.direction) )
+			self.plot.activePlots = [ 'Velocity {0}'.format(data.direction), 'Command Velocity {0}'.format(data.direction)]
 			self.plot.createPlotHandles()
+			self.unSelectRadioButtons('controlSource')
 
 	def selectPlotVariables(self ): 
 
@@ -1346,6 +1344,7 @@ class MainWindow(QtGui.QMainWindow, object):
 			#set variables in 
 	
 	def killJoy(self):
+		self.commander.joy = [ ];
 		self.rosLauncher.kill_node("joy")
 
 	def launchJoy(self):
@@ -1384,6 +1383,16 @@ class MainWindow(QtGui.QMainWindow, object):
 		for button in self.radioButtons[group_name].values():
 			button.setChecked(False)		  
 		self.radioButtons['groups'][group_name].setExclusive(True)  
+		self.onControlSource()
+
+	def _closeEvent(self, clicked):
+		reply = QtGui.QMessageBox.question(self, 'Message',
+			"Are you sure to quit?", QtGui.QMessageBox.Yes | 
+			QtGui.QMessageBox.No, QtGui.QMessageBox.No)
+
+		if reply == QtGui.QMessageBox.Yes:
+			self.commander.land()
+			QtGui.qApp.quit()
 
 	def closeEvent(self, event):
 		reply = QtGui.QMessageBox.question(self, 'Message',
@@ -1391,6 +1400,7 @@ class MainWindow(QtGui.QMainWindow, object):
 			QtGui.QMessageBox.No, QtGui.QMessageBox.No)
 
 		if reply == QtGui.QMessageBox.Yes:
+			self.commander.land()
 			event.accept()
 		else:
 			event.ignore() 
@@ -1401,7 +1411,6 @@ class MainWindow(QtGui.QMainWindow, object):
 			return
 
 		if self.radioButtons['controlSource']['keyboard'].isChecked():
-			print "here"
 			if key == QtCore.Qt.Key_A:
 				self.commander.yaw( -1 )
 			elif key == QtCore.Qt.Key_D:
@@ -1495,9 +1504,6 @@ class MainWindow(QtGui.QMainWindow, object):
 			button.setEnabled(True)
 		
 		self.unSelectRadioButtons('controlSource')
-
-	def recieveNavdata(self, navdata):
-		pass
 	
 	def recieveCmdVel(self, twist):
 		if not self.update_dict[ inspect.stack()[0][3] ] :
@@ -1509,6 +1515,12 @@ class MainWindow(QtGui.QMainWindow, object):
 		self.infoLabel['setVelocity']['y'].setText("y: {0:.2f}".format( twist.linear.y ))
 		self.infoLabel['setVelocity']['z'].setText("z: {0:.2f}".format( twist.linear.z ))
 		self.infoLabel['setVelocity']['yaw'].setText("vyaw: {0:.2f}".format( twist.angular.z  * 180.0 / math.pi ))
+
+		t = rospy.get_time() - self.timeZero
+		self.plot.plots['Command Velocity x'].append( t, twist.linear.x )
+		self.plot.plots['Command Velocity y'].append( t, twist.linear.y )
+		self.plot.plots['Command Velocity z'].append( t, twist.linear.z )
+		self.plot.plots['Command Velocity yaw'].append( t, twist.angular.z )
 
 	def recieveStateEstimation(self, odometry):
 		if not self.update_dict[ inspect.stack()[0][3] ] :
@@ -1548,8 +1560,8 @@ class MainWindow(QtGui.QMainWindow, object):
 		self.plot.plots['Velocity yaw'].append( t, odometry.twist.twist.angular.z )
 	
 	def updateControllerState( self ):
-		self.radioButtons['controlSource']['openLoop'].setChecked(not self.commander.controller_state)
-		self.radioButtons['controlSource']['closedLoop'].setChecked(self.commander.controller_state)
+		self.radioButtons['controllerType']['openLoop'].setChecked(not self.commander.controller_state)
+		self.radioButtons['controllerType']['closedLoop'].setChecked(self.commander.controller_state)
 
 	def updateGeneralInfo( self ):
 		self.infoLabel['generalInfo']['batteryPercent'].setText("Battery Percent: {0}".format(self.commander.battery))

@@ -9,7 +9,8 @@ import rospy
 
 from nav_msgs.msg import Odometry 
 from geometry_msgs.msg import Vector3Stamped, Twist 
-from diagnostic_msgs.msg import KeyValue
+#from diagnostic_msgs.msg import KeyValue
+from std_msgs.msg import Bool 
 from ardrone_autonomy.msg import Navdata 
 from sensor_msgs.msg import Joy 
 
@@ -41,7 +42,7 @@ class ArdroneCommander(Quadrotor, object):
 		self.signal = [ ]
 		
 		self.publisher = dict( 
-			controller_state = rospy.Publisher('ardrone/controller_state', KeyValue, latch = True),
+			controller_state = rospy.Publisher('ardrone/controller_state', Bool, latch = True),
 			trajectory = rospy.Publisher('ardrone/desired_pose', Odometry)
 			)
 
@@ -68,24 +69,13 @@ class ArdroneCommander(Quadrotor, object):
 	def talk( self, time_data ):
 		if self.controller_state:
 			self.publish_goal()
-		elif self.state == 'Flying' or self.state == 'Hovering':
+		#DEBUG ARDRONESTATE UNKOWN!!!
+		elif self.state == ArDroneStates.STATES[0] or self.state == ArDroneStates.STATES[3] or self.state == ArDroneStates.STATES[4]: #flying or hovering
 			self.commander.velocity( self.velocity ) 
-			"""
-			if self.publisher_frame == 'local': 
-				velocity_cmd = self.velocity
-			elif self.publisher_frame == 'global': 
-				velocity_cmd = dict()
-				velocity_cmd['x'] =  self.velocity['x'] * cos( self.position['yaw'] ) + self.velocity['y'] * sin( self.position['yaw'] )
-				velocity_cmd['y'] = -self.velocity['x'] * sin( self.position['yaw'] ) + self.velocity['y'] * cos( self.position['yaw'] )
-				velocity_cmd['z'] =  self.velocity['z'] 
-				velocity_cmd['yaw'] =  self.velocity['yaw'] 
-				#self.commander.velocity( velocity_cmd ) 
-			"""
 			
 	def publish_controller_state( self, boolean ):
-		msg = KeyValue()
-		msg.key = str( boolean )
-		msg.value = str( boolean )
+		msg = Bool()
+		msg.data = boolean 
 		self.publisher['controller_state'].publish(msg)
 
 	def publish_goal( self ):
@@ -230,23 +220,14 @@ class ArdroneCommander(Quadrotor, object):
 		self.controller_state = False 
 		self.publish_controller_state( self.controller_state )
 
-	"""
-	def local_command_frame( self, *args ):
-		self.publisher_frame = 'local'
-		self.control_off( )
-
-	def global_command_frame( self, *args ):
-		self.publisher_frame = 'global'
-		self.control_off( )
-	"""
-
 	def signal_init( self, signal_data ):
 		# inits signal
 		if len(self.signal):
 			rospy.logwarn( "It's still sending data" )
 		else:
 			if self.state == ArDroneStates.STATES[3] or self.state == ArDroneStates.STATES[4]: #flying or hovering
-				self.control_off()
+				#self.control_off()
+				self.stop()
 				self.signal = SignalResponse( tf = signal_data.time, dt = signal_data.dt, f = signal_data.f, signal = signal_data.signal, direction = signal_data.direction ) 
 				self.timer['signal'] = rospy.Timer( rospy.Duration(self.signal.dt), self.cmd_signal, oneshot = False )
 				rospy.logwarn("Signal Started!")
@@ -258,8 +239,7 @@ class ArdroneCommander(Quadrotor, object):
 		if len( self.signal ):
 			self.velocity[ self.signal.direction ] = self.signal.command()
 		else:
-			rospy.logwarn( "Done sending Signal" )
-			self.SignalOff()
+			self.signal_off()
 
 	def signal_off( self ):
 		# ends signal

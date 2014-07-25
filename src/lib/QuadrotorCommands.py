@@ -62,14 +62,14 @@ class Commands(object):
 		try:
 			self.service['toggle_cam']()
 		except rospy.ServiceException, e:
-			print "Service call failed: %s"%e
+			rospy.logerr( "Service call failed: %s"%e )
 
 	def cam_select( self, cam ):
 		rospy.wait_for_service('ardrone/togglecam')
 		try:
 			return self.service['cam_select'](cam)
 		except rospy.ServiceException, e:
-			print "Service call failed: %s"%e
+			rospy.logerr( "Service call failed: %s"%e )
 
 	def led_animation( self, animation_type, freq, duration ):
 		"""
@@ -94,28 +94,28 @@ class Commands(object):
 		try:
 			return self.service['led_animation'](animation_type, freq, duration)
 		except rospy.ServiceException, e:
-			print "Service call failed: %s"%e
+			rospy.logerr( "Service call failed: %s"%e )
 
 	def imu_calibration( self ):
 		rospy.wait_for_service('ardrone/imu_recalib')
 		try:
 			self.service['imu_calibration']()
 		except rospy.ServiceException, e:
-			print "Service call failed: %s"%e
+			rospy.logerr( "Service call failed: %s"%e )
 
 	def flat_trim( self ):
 		rospy.wait_for_service('ardrone/flattrim')
 		try:
 			self.service['flat_trim']()
 		except rospy.ServiceException, e:
-			print "Service call failed: %s"%e
+			rospy.logerr( "Service call failed: %s"%e )
 
 	def record( self, enable ):
 		rospy.wait_for_service('ardrone/setrecord')
 		try:
 			return self.service['record']( enable )
 		except rospy.ServiceException, e:
-			print "Service call failed: %s"%e
+			rospy.logerr( "Service call failed: %s"%e )
 
 	def flight_animation( self, animation_type, duration):
 		"""
@@ -146,7 +146,7 @@ class Commands(object):
 		try:
 			self.service['flight_animation'](animation_type, 0)
 		except rospy.ServiceException, e:
-			print "Service call failed: %s"%e 
+			rospy.logerr( "Service call failed: %s"%e )
 
 def main():
 	pass
