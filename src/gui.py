@@ -13,7 +13,7 @@ from lib.Signals import SignalResponse
 from ardrone_control.srv import OpenLoopCommand 
 from ardrone_autonomy.msg import Navdata 
 from geometry_msgs.msg import Twist
-from sensor_msgs.msg import Image 
+from sensor_msgs.msg import CompressedImage, Image 
 from nav_msgs.msg import Odometry
 import dynamic_reconfigure.client
 
@@ -161,18 +161,22 @@ class CameraCanvas(QtGui.QLabel):
 	"""docstring for CameraCanvas"""
 	def __init__(self):
 		super(CameraCanvas, self).__init__()
+
 		self.subscriber = rospy.Subscriber('ardrone/image_raw', Image, callback = self.recieveImage)
-		self.pixmap = QtGui.QImage( 
-			os.path.dirname(os.path.abspath(__file__))+'/figs/freeflight.png')
+
+		self.pixmap = QtGui.QImage( os.path.dirname(os.path.abspath(__file__))+'/figs/freeflight.png')
 		self.setScaledContents(True)
 
-	def recieveImage(self, image):
-		self.pixmap = QtGui.QImage(image.data, image.width, image.height, image_format_table[image.encoding] )
 
+	def recieveImage(self, image):
+		self.pixmap = QtGui.QImage(image.data, image.width, image.height, image.step , image_format_table[image.encoding] )
+		
 	def updateCamera(self):
 		self.setPixmap( 
-			QtGui.QPixmap.fromImage(self.pixmap).scaled(self.height(), self.width(), QtCore.Qt.KeepAspectRatio, QtCore.Qt.FastTransformation )  )
-		
+			QtGui.QPixmap.fromImage(self.pixmap).scaled(self.pixmap.width(), self.pixmap.height(),
+				QtCore.Qt.KeepAspectRatio, QtCore.Qt.FastTransformation )  )
+
+
 class ControllerSetupWizard(QtGui.QWizard):
 	"""docstring for ControllerSetupWizard"""
 	def __init__(self):
@@ -1010,20 +1014,20 @@ class MainWindow(QtGui.QMainWindow, object):
 		layout = QtGui.QVBoxLayout()
 		cameraSelectLayout = QtGui.QHBoxLayout()
 
+
+		self.cameraImage = CameraCanvas()
 		self.radioButtons['cameraSelect'] = dict()
-		self.radioButtons['cameraSelect']['frontCamera'] = QtGui.QRadioButton("Front Camera", self.groupBox['camera'], clicked=self.onCameraSelect)
+		self.radioButtons['cameraSelect']['frontCamera'] = QtGui.QRadioButton("Front Camera", clicked=self.onCameraSelect)
 		self.radioButtons['cameraSelect']['frontCamera'].setChecked(True)
-		self.radioButtons['cameraSelect']['bottomCamera'] = QtGui.QRadioButton("Bottom Camera", self.groupBox['camera'], clicked=self.onCameraSelect)
+		self.radioButtons['cameraSelect']['bottomCamera'] = QtGui.QRadioButton("Bottom Camera", clicked=self.onCameraSelect)
 		self.radioButtons['cameraSelect']['bottomCamera'].setChecked(False)
 
 		cameraSelectLayout.addWidget(self.radioButtons['cameraSelect']['frontCamera'])
 		cameraSelectLayout.addWidget(self.radioButtons['cameraSelect']['bottomCamera'])
 
+		layout.addLayout(cameraSelectLayout)
+		layout.addWidget(self.cameraImage)
 
-		self.cameraImage = CameraCanvas() #QtGui.QLabel(self)
-
-		layout.addLayout( cameraSelectLayout  )
-		layout.addWidget( self.cameraImage )
 		self.groupBox['camera'].setLayout(layout)
 		self.layouts['cameraDisplay'].addWidget( self.groupBox['camera']  )
 
@@ -1153,13 +1157,13 @@ class MainWindow(QtGui.QMainWindow, object):
 		elif action == 'stop':
 			self.rosLauncher.kill_node('rosserial')
 			self.rosLauncher.kell_node('arduino_translator')
-
+	
 	def onCameraSelect( self ):
 		if self.radioButtons['cameraSelect']['frontCamera'].isChecked():
-			self.commander.cam_select( 0 )
+			self.commander.cam_select(0)
 		elif self.radioButtons['cameraSelect']['bottomCamera'].isChecked():
-			self.commander.cam_select( 1 )
-		
+			self.commander.cam_select(1)
+
 	def onControlSource( self ):
 		self.killJoy( )
 		if self.radioButtons['controlSource']['PS3'].isChecked():
@@ -1583,7 +1587,6 @@ class MainWindow(QtGui.QMainWindow, object):
 
 	def updateCamera( self ):
 		self.cameraImage.updateCamera()
-		#self.cameraImage.setPixmap( QtGui.QPixmap.fromImage(self.pixmap) )
 
 	def updatePlot( self ):
 		self.plot.updateFigure()
