@@ -164,17 +164,21 @@ class CameraCanvas(QtGui.QLabel):
 
 		self.subscriber = rospy.Subscriber('ardrone/image_raw', Image, callback = self.recieveImage)
 
-		self.pixmap = QtGui.QImage( os.path.dirname(os.path.abspath(__file__))+'/figs/freeflight.png')
+		self.pixmap = QtGui.QPixmap.fromImage( 
+			QtGui.QImage( os.path.dirname(os.path.abspath(__file__))+'/figs/freeflight.png')
+			)
 		self.setScaledContents(True)
 
 
 	def recieveImage(self, image):
-		self.pixmap = QtGui.QImage(image.data, image.width, image.height, image.step , image_format_table[image.encoding] )
+		self.pixmap = QtGui.QPixmap.fromImage( 
+			QtGui.QImage(image.data, image.width, image.height, image.step , image_format_table[image.encoding] )
+			)
 		
 	def updateCamera(self):
-		self.setPixmap( 
-			QtGui.QPixmap.fromImage(self.pixmap).scaled(self.pixmap.width(), self.pixmap.height(),
-				QtCore.Qt.KeepAspectRatio, QtCore.Qt.FastTransformation )  )
+		self.setPixmap( self.pixmap.scaled( self.width(), self.height(), QtCore.Qt.KeepAspectRatioByExpanding) )
+		# QtCore.Qt.FastTransformation
+
 
 
 class ControllerSetupWizard(QtGui.QWizard):
