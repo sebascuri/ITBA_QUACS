@@ -134,8 +134,11 @@ class ArdroneCommander(Quadrotor, object):
 			rospy.logwarn("Drone is not landed")
 
 	def reset( self, *args ):
-		rospy.logwarn("Reset Drone!")
-		self.commander.reset()
+		if self.state == ArDroneStates.Landed or self.state == ArDroneStates.Unknown: #landed
+			rospy.logwarn("Reset Drone!")
+			self.commander.reset()
+		else:
+			rospy.logwarn("It is not safe to reset!")
 
 	def land( self, *args ):
 		rospy.logwarn("Land Drone!")
