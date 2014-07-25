@@ -69,8 +69,7 @@ class ArdroneCommander(Quadrotor, object):
 	def talk( self, time_data ):
 		if self.controller_state:
 			self.publish_goal()
-		#DEBUG ARDRONESTATE UNKOWN!!!
-		elif self.state == ArDroneStates.STATES[0] or self.state == ArDroneStates.STATES[3] or self.state == ArDroneStates.STATES[4]: #flying or hovering
+		elif self.state == ArDroneStates.Flying or self.state == ArDroneStates.Hovering: #flying or hovering
 			self.commander.velocity( self.velocity ) 
 			
 	def publish_controller_state( self, boolean ):
@@ -127,7 +126,7 @@ class ArdroneCommander(Quadrotor, object):
 		rospy.set_param('/ardrone_autonomy/flight_without_shell', 1)
 		
 	def take_off( self, *args ):
-		if self.state == ArDroneStates.STATES[2] : #landed
+		if self.state == ArDroneStates.Landed : #landed
 			rospy.logwarn("Take Off Drone!")
 			self.commander.take_off()
 		else:
@@ -225,7 +224,7 @@ class ArdroneCommander(Quadrotor, object):
 		if len(self.signal):
 			rospy.logwarn( "It's still sending data" )
 		else:
-			if self.state == ArDroneStates.STATES[3] or self.state == ArDroneStates.STATES[4]: #flying or hovering
+			if self.state == ArDroneStates.Flying or self.state == ArDroneStates.Hovering: 
 				#self.control_off()
 				self.stop()
 				self.signal = SignalResponse( tf = signal_data.time, dt = signal_data.dt, f = signal_data.f, signal = signal_data.signal, direction = signal_data.direction ) 

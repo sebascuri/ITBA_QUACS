@@ -6,7 +6,7 @@
 import rospy
 import sys
 
-from lib import Quadrotor
+from lib import Quadrotor, ArDroneStates
 from lib import Quaternion
 
 from lib import Filter
@@ -174,7 +174,8 @@ class StateEstimation(Quadrotor, object):
 		self.position = dict( x = config.x, y = config.y, z = config.z, yaw = config.yaw, pitch = 0., roll = 0.)
 		self.orientation = Quaternion().set_euler( dict(yaw = config.yaw, pitch = 0.0, roll = 0.0) )
 		self.velocity = dict( x = 0., y = 0., z = 0., yaw = 0., pitch = 0., roll = 0.)
-		self.state = 'Unknown'
+		self.set_state(ArDroneStates.Unknown)
+
 		self.battery = 100
 
 		self.sensors = dict()
@@ -205,19 +206,6 @@ class StateEstimation(Quadrotor, object):
 		navdata_filter_params = rospy.get_param( 'Navdata', dict() )
 		for key, values in navdata_filter_params.items():
 			self.filters['navdata'][key] = Filter.Digital( a = values['a'], b = values['b'] )
-
-		"""
-		self.state_estimation = StateEstimation( 
-			name = name,
-			position = position,
-			orientation = orientation,
-			velocity = velocity,
-			state = state,
-			battery = battery,
-			sensors = sensors,
-			filters = filters
-		)
-		"""
 
 		rospy.logwarn("\nRestarted State Estimation for drone {0} with: \nInitial Postion = {1}\nSensor List: {2}".format(
 			self.name, self.position, self.sensors.keys()))

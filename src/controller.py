@@ -88,8 +88,6 @@ class Controller(Quadrotor, object):
 				rospy.logwarn('\n Controller has {0}'.format( str(self.controller[config.direction]) ))
 				self.controller_state = False
 			
-
-
 		return config 
 
 	def default_init(self):

@@ -1127,7 +1127,7 @@ class MainWindow(QtGui.QMainWindow, object):
 		self.setMenuBar(menubar)
 
 	def initStatusBar( self ):
-		self.statusLabel = QtGui.QLabel("Ar.Drone State: <b> {0} </b> ".format( self.commander.state ))	
+		self.statusLabel = QtGui.QLabel("Ar.Drone State: <b> {0} </b> ".format( self.commander.get_state() ))	
 		self.statusBar().addWidget( self.statusLabel ) 
 
 	def onArduino( self, action, clicked ):
@@ -1565,7 +1565,7 @@ class MainWindow(QtGui.QMainWindow, object):
 
 	def updateGeneralInfo( self ):
 		self.infoLabel['generalInfo']['batteryPercent'].setText("Battery Percent: {0}".format(self.commander.battery))
-		self.statusLabel.setText( "Ar.Drone State: <b> {0} </b> ".format( self.commander.state )  )
+		self.statusLabel.setText( "Ar.Drone State: <b> {0} </b> ".format( self.commander.get_state() )  )
 
 	def updateSetPoint( self ):
 		t = rospy.get_time() - self.timeZero
