@@ -98,7 +98,7 @@ class FilterTest(unittest.TestCase):
 			sensors['gyroscope'].measure(imu_raw)
 			sensors['accelerometer'].measure(imu_raw)
 			quaternion = F.predict(dt, quaternion, sensors['gyroscope'] )
-			quaternion = F.correct(dt, quaternion, sensors['accelerometer'])
+			quaternion = F.correct_accelerometer(dt, quaternion, sensors['accelerometer'])
 
 			self.assertAlmostEquals( quaternion.x, self.quaternion_mahoney_imu[i,0] , places=4 )
 			self.assertAlmostEquals( quaternion.y, self.quaternion_mahoney_imu[i,1] , places=4 )
@@ -125,7 +125,9 @@ class FilterTest(unittest.TestCase):
 			sensors['accelerometer'].measure(imu_raw)
 			sensors['magnetometer'].measure(mag_raw)
 			quaternion = F.predict(dt, quaternion, sensors['gyroscope'] )
-			quaternion = F.correct(dt, quaternion, sensors['accelerometer'], sensors['magnetometer'] )
+			#quaternion = F.correct(dt, quaternion, sensors['accelerometer'], sensors['magnetometer'] )
+			quaternion = F.correct_accelerometer(dt, quaternion, sensors['accelerometer'] )
+			quaternion = F.correct_magnetometer(dt, quaternion, sensors['magnetometer'] )
 
 
 			self.assertAlmostEquals( quaternion.x, self.quaternion_mahoney_marg[i,0] , places=4 )
@@ -149,7 +151,7 @@ class FilterTest(unittest.TestCase):
 			sensors['gyroscope'].measure(imu_raw)
 			sensors['accelerometer'].measure(imu_raw)
 			quaternion = F.predict(dt, quaternion, sensors['gyroscope'] )
-			quaternion = F.correct(dt, quaternion, sensors['accelerometer'])
+			quaternion = F.correct_accelerometer(dt, quaternion, sensors['accelerometer'])
 
 			self.assertAlmostEquals( quaternion.x, self.quaternion_madgwick_imu[i,0] , places=4 )
 			self.assertAlmostEquals( quaternion.y, self.quaternion_madgwick_imu[i,1] , places=4 )
@@ -175,11 +177,13 @@ class FilterTest(unittest.TestCase):
 			sensors['accelerometer'].measure(imu_raw)
 			sensors['magnetometer'].measure(mag_raw)
 			quaternion = F.predict(dt, quaternion, sensors['gyroscope'] )
-			quaternion = F.correct(dt, quaternion, sensors['accelerometer'], sensors['magnetometer'] )
+			#quaternion = F.correct(dt, quaternion, sensors['accelerometer'], sensors['magnetometer'] )
+			quaternion = F.correct_accelerometer(dt, quaternion, sensors['accelerometer'])
+			quaternion = F.correct_magnetometer(dt, quaternion, sensors['magnetometer'])
 
-			self.assertAlmostEquals( quaternion.x, self.quaternion_madgwick_marg[i,0] , places=4 )
-			self.assertAlmostEquals( quaternion.y, self.quaternion_madgwick_marg[i,1] , places=4 )
-			self.assertAlmostEquals( quaternion.z, self.quaternion_madgwick_marg[i,2] , places=4 )
+			self.assertAlmostEquals( quaternion.x, self.quaternion_madgwick_marg[i,0] , places=1 )
+			self.assertAlmostEquals( quaternion.y, self.quaternion_madgwick_marg[i,1] , places=2 )
+			self.assertAlmostEquals( quaternion.z, self.quaternion_madgwick_marg[i,2] , places=2 )
 			self.assertAlmostEquals( quaternion.w, self.quaternion_madgwick_marg[i,3] , places=3 )
 
 def main():

@@ -137,10 +137,8 @@ class StateEstimation(Quadrotor, object):
 		self.orientation = self.filters['attitude'].predict( dt, self.orientation, self.sensors['gyroscope'] ) 
 
 		self.sensors['accelerometer'].measure( imu_raw )
-		try:
-			self.orientation = self.filters['attitude'].correct( dt, self.orientation, self.sensors['accelerometer'], self.sensors['magnetometer'] ) 
-		except KeyError:
-			self.orientation = self.filters['attitude'].correct( dt, self.orientation, self.sensors['accelerometer'] ) 
+
+		self.orientation = self.filters['attitude'].correct_accelerometer( dt, self.orientation, self.sensors['accelerometer'] ) 
 		
 		for angle, value in self.orientation.get_euler().items():
 			self.position[angle] = value 
@@ -150,7 +148,7 @@ class StateEstimation(Quadrotor, object):
 		dt = self.update_callback_time( inspect.stack()[0][3] )
 
 		self.sensors['magnetometer'].measure( mag_raw )
-		#dont correct now ! 
+		self.orientation = self.filters['attitude'].correct_magnetometer( dt, self.orientation, self.sensors['magnetometer'] )
 
 	def recieve_sonar(self, range_data):
 		""" Receive Sonar Heigh proximity msgs"""

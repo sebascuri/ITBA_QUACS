@@ -221,9 +221,10 @@ class Magdwick(SO3, object):
 			return quaternion
 		elif len(sensors) == 1:
 			accelerometer = sensors[0].normalized()
+			
 			f = quaternion.conjugate() * Quaternion( [0, 0, 1.0, 0] ) * quaternion - Quaternion( accelerometer.get_quaternion() )
-			F = np.mat( f.get_vector() )
-		
+			
+			F = np.mat( f.get_vector() )		
 			J = quaternion.z_inv_jacobian()
 
 		elif len(sensors) == 2:
@@ -236,18 +237,39 @@ class Magdwick(SO3, object):
 			fb = quaternion.conjugate() * Quaternion( b ) * quaternion - Quaternion( magnetometer.get_quaternion() )
 
 			F = np.mat(fg.get_vector() +  fb.get_vector())
-
 			Jg = quaternion.z_inv_jacobian()
 			Jb = b[0] * quaternion.x_inv_jacobian() + b[2] * quaternion.z_inv_jacobian()
-
 			J = np.bmat( [ [Jg], [Jb] ] )
 
-		step = np.dot( F, J )
+		return self.correct_error( dt, quaternion, F, J)
+
+	def correct_magnetometer(self, dt, quaternion, magnetometer):
+		magnetometer = magnetometer.normalized()
+
+		h = quaternion * Quaternion( magnetometer.get_quaternion() ) * quaternion.conjugate()
+		b = [np.linalg.norm([h.x, h.y]), 0, h.z, 0] 
+		f = quaternion.conjugate() * Quaternion( b ) * quaternion - Quaternion( magnetometer.get_quaternion() )
+
+		F = np.mat( f.get_vector() )
+		J = b[0] * quaternion.x_inv_jacobian() + b[2] * quaternion.z_inv_jacobian()
+
+		return self.correct_error( dt, quaternion, F, J)
+
+ 	def correct_accelerometer(self, dt, quaternion, accelerometer):
+ 		accelerometer = accelerometer.normalized()
+
+		f = quaternion.conjugate() * Quaternion( [0, 0, 1.0, 0] ) * quaternion - Quaternion( accelerometer.get_quaternion() )
+
+		F = np.mat( f.get_vector() )
+		J = quaternion.z_inv_jacobian()
+
+		return self.correct_error( dt, quaternion, F, J)
+
+	def correct_error(self, dt, quaternion, F, J):
+ 		step = np.dot( F, J )
 		norm = np.linalg.norm(step)
 		if norm != 0:
 			step = step/np.linalg.norm(step)
-
-
 		qdot = Quaternion( - self.Beta * step )
 
 		return (quaternion + qdot * dt).normalize()
@@ -289,8 +311,33 @@ class Mahoney(SO3, object):
 
 		self.ei += self.e * dt 
 
- 		u = 0.5* (self.Kp *self.e + self.Ki*self.ei)
+ 		return self.correct_error( dt, quaternion )
 
+ 	def correct_magnetometer(self, dt, quaternion, magnetometer):
+		magnetometer = magnetometer.normalized()
+
+
+		h = quaternion * Quaternion( magnetometer.get_quaternion() ) * quaternion.conjugate()
+		b = [np.linalg.norm([h.x, h.y]), 0, h.z, 0] 
+		f = quaternion.conjugate() * Quaternion( b ) * quaternion
+
+		self.e = np.cross( magnetometer.get_vector(), f.get_vector() )
+		self.ei += self.e * dt 
+
+ 		return self.correct_error( dt, quaternion )
+
+ 	def correct_accelerometer(self, dt, quaternion, accelerometer):
+ 		accelerometer = accelerometer.normalized()
+
+		f = quaternion.conjugate() * Quaternion( [0, 0, 1.0, 0] ) * quaternion
+
+		self.e = np.cross(  accelerometer.get_vector(), f.get_vector() )
+		self.ei += self.e * dt 
+
+		return self.correct_error( dt, quaternion )
+
+ 	def correct_error(self, dt, quaternion):
+ 		u = 0.5* (self.Kp *self.e + self.Ki*self.ei)
  		qdot = quaternion * Quaternion( np.insert(u, 3, 0) ) 
 
  		return (quaternion + qdot * dt).normalize()
