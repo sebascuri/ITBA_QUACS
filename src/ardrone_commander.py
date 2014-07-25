@@ -158,7 +158,7 @@ class ArdroneCommander(Quadrotor, object):
 		self.commander.cam_select( cam )
 
 	def imu_calibration( self, *args ):
-		rospy.set_param('/ardrone_autonomy/do_imu_calibration', "true")
+		#rospy.set_param('/ardrone_autonomy/do_imu_caliberation', True)
 		self.commander.imu_calibration( )
 
 	def flat_trim( self, *args ):

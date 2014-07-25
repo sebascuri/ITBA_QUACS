@@ -39,7 +39,7 @@
 	<param name="control_yaw" value="6.11" />
 	<param name="euler_angle_max" value="0.35" />
 
-	<param name="do_imu_calibration" value="false" />
+	<param name="do_imu_caliberation" value="true" />
 	<param name="tf_prefix" value="ardrone" />
 
 	<!-- Enables the standard /ardrone/navdata, imu and mag topics. If not specified, defaults to TRUE -->
