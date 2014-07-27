@@ -32,14 +32,15 @@ class Digital(Filter.Digital, object):
 		self.set_point = kwargs.get('set_point', 0.0)
 		self.error = kwargs.get('error', 0.0)
 		self.periodic = kwargs.get('periodic', False)
-	def input_measurement( self, measurement ):
+	
+	def input_measurement( self, measurement, dt = None ):
 		self.error = self.set_point - measurement 
 		if self.periodic:
 			self.error = math.atan2( math.sin( self.error ), math.cos( self.error ))
 
 		return self.set_input( self.error )
 
-	def change_set_point( self, new_set_point ):
+	def change_set_point( self, new_set_point, dt = None ):
 		self.set_point = new_set_point		
 
 class ZPK(Filter.ZPK, object):
@@ -56,7 +57,8 @@ class ZPK(Filter.ZPK, object):
 
 	def __str__(self):
 		return 'zeros {0}, poles {1}, gain {2}'.format(self.zeros, self.poles, self.gain)
-	def input_measurement( self, measurement ):
+	
+	def input_measurement( self, measurement, dt = None ):
 		self.error = self.set_point - measurement 
 		if self.periodic:
 			self.error = math.atan2( math.sin( self.error ), math.cos( self.error ))
@@ -78,14 +80,14 @@ class TF(Filter.TF, object):
 	def __str__(self):
 		return 'numerator = {0}, denominator = {1}'.format( self.num, self.den )
 
-	def input_measurement( self, measurement ):
+	def input_measurement( self, measurement, dt = None ):
 		self.error = self.set_point - measurement 
 		if self.periodic:
 			self.error = math.atan2( math.sin( self.error ), math.cos( self.error ))
 
 		return self.set_input( self.error )
 
-	def change_set_point( self, new_set_point ):
+	def change_set_point( self, new_set_point, dt = None ):
 		self.set_point = new_set_point	
 		
 class PID(object):

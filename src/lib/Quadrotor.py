@@ -29,8 +29,8 @@ class Quadrotor(object):
 	def __init__(self, **kwargs):
 		super(Quadrotor, self).__init__()
 		self.name = kwargs.get('name', "/local")
-		self.position = kwargs.get('position', dict( x=0. , y=0., z=0., yaw=0., pitch=0., roll=0. ) )
-		self.velocity = kwargs.get('velocity', dict( x=0. , y=0., z=0., yaw=0., pitch=0., roll=0. ) )
+		self.position = kwargs.get('position', dict( x=0. , y=0., z=0., yaw=0. ) )
+		self.velocity = kwargs.get('velocity', dict( x=0. , y=0., z=0., yaw=0. ) )
 		self.orientation = kwargs.get('orientation', Quaternion(x=0., y=0., z=0., w=1.) )
  		self.state = ArDroneStates( kwargs.get('state',ArDroneStates.Unknown ))
  		self.battery = kwargs.get('battery', 100.)
@@ -50,8 +50,8 @@ class Quadrotor(object):
 def main():
 
 	
-	quad = Quadrotor( position = dict(x=0, y=1, z = 0.5, yaw=0.3, pitch=0., roll = 0.) )
-	quad.velocity = dict(x=0, y=1, z = 0.5, yaw=0.1, pitch=0.2, roll = 0.3)
+	quad = Quadrotor( position = dict(x=0, y=1, z = 0.5, yaw=0.3,) )
+	quad.velocity = dict(x=0, y=1, z = 0.5, yaw=0.1)
 	print quad.position
 
 

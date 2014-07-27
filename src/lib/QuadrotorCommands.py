@@ -1,7 +1,7 @@
 #!/usr/bin/env python  
 # -*- coding: utf-8 -*-
 
-import roslib; roslib.load_manifest('ardrone_control')
+#import roslib; roslib.load_manifest('ardrone_control')
 import rospy
 
 from geometry_msgs.msg import Twist
@@ -51,9 +51,9 @@ class Commands(object):
 		#msg.angular.y = velocity_dict.get('pitch', 1.0)
 		#msg.angular.x = velocity_dict.get('roll', 1.0)
 
-		#disable auto_hover mode
-		msg.angular.y = velocity_dict.get('pitch', 1.0) #1.0
-		msg.angular.x = velocity_dict.get('roll', 1.0) #1.0
+		# auto_hover mode
+		msg.angular.y = velocity_dict.get('pitch', 0.0) #1.0
+		msg.angular.x = velocity_dict.get('roll', 0.0) #1.0
 
 		self.publisher['cmd_vel'].publish( msg )
 

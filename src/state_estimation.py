@@ -15,7 +15,10 @@ from lib import Sensors
 from ardrone_autonomy.msg import Navdata
 from sensor_msgs.msg import NavSatFix, Imu, Range, Image  
 from geometry_msgs.msg import Vector3Stamped
+from geometry_msgs.msg import Quaternion as QuaternionMsg
+
 from nav_msgs.msg import Odometry
+from ardrone_control.msg import QuadrotorPose
 
 from dynamic_reconfigure.server import Server
 from ardrone_control.cfg import InitialConditionsConfig
@@ -45,7 +48,11 @@ class StateEstimation(Quadrotor, object):
 			raw_bottom_camera = rospy.Subscriber('ardrone/bottom/image_raw', Image, callback = self.recieve_bottom_camera),
 		)
 
-		self.publisher = dict( state = rospy.Publisher('ardrone/estimated_pose', Odometry) )
+		self.publisher = dict( 
+			estimated_pose = rospy.Publisher('ardrone/sensor_fusion/pose', QuadrotorPose),
+			estimated_velocity = rospy.Publisher('ardrone/sensor_fusion/velocity', QuadrotorPose),
+			estimated_quaternion = rospy.Publisher('ardrone/sensor_fusion/estimated_quaternion', QuaternionMsg),
+			)
 
 		self.tf_broadcaster = dict( local = tf.TransformBroadcaster( ) )
 
@@ -65,7 +72,16 @@ class StateEstimation(Quadrotor, object):
 	
 	def publish_estimation(self, time):
 		#publish estimated pose
+		self.publisher['estimated_pose'].publish( self.get_msg(self.position) )
+		self.publisher['estimated_velocity'].publish( self.get_msg(self.velocity) ) 
 		
+		msg = QuaternionMsg()
+		for key, value in self.orientation:
+			setattr(msg, key, value)
+
+		self.publisher['estimated_quaternion'].publish(msg)
+
+		"""
 		msg = Odometry( )
 		msg.header.stamp = rospy.Time.now()
 		msg.header.frame_id = "/nav"
@@ -98,7 +114,15 @@ class StateEstimation(Quadrotor, object):
 			msg.header.stamp,
 			msg.child_frame_id, 
 			msg.header.frame_id)
-		
+		"""
+	
+	def get_msg( self, attribute ):
+		msg = QuadrotorPose()
+		for key, value in attribute.items():
+			setattr(msg, key, value)
+
+		return msg 
+
 	def update_callback_time( self, callback_name ):
 		aux_time = rospy.get_time()
 		dt = aux_time - self.callback_time[ callback_name ]
@@ -112,7 +136,7 @@ class StateEstimation(Quadrotor, object):
 		#set linear velocity
 		self.velocity['x'] = navdata.vx / 1000.0 
 		self.velocity['y'] = navdata.vy / 1000.0 
-		self.velocity['z'] = navdata.vz / 1000.0 
+		self.velocity['z'] = navdata.vz / 1000.0  #ToDo Correct This
 
 		self.set_state(navdata.state) #set state
 		self.battery = navdata.batteryPercent #set battery % 
@@ -142,9 +166,8 @@ class StateEstimation(Quadrotor, object):
 
 		self.orientation = self.filters['attitude'].correct_accelerometer( dt, self.orientation, self.sensors['accelerometer'] ) 
 		
-		for angle, value in self.orientation.get_euler().items():
-			self.position[angle] = value 
-			self.velocity[angle] = getattr( self.sensors['gyroscope'], angle)
+		self.position['yaw'] = self.orientation.get_yaw()
+		self.velocity['yaw'] = getattr( self.sensors['gyroscope'], 'yaw')
 
 	def recieve_mag(self, mag_raw):
 		dt = self.update_callback_time( inspect.stack()[0][3] )
@@ -171,9 +194,9 @@ class StateEstimation(Quadrotor, object):
 
 	def restart( self, config, level ):
 		self.name = config.name 
-		self.position = dict( x = config.x, y = config.y, z = config.z, yaw = config.yaw, pitch = 0., roll = 0.)
+		self.position = dict( x = config.x, y = config.y, z = config.z, yaw = config.yaw)
 		self.orientation = Quaternion().set_euler( dict(yaw = config.yaw, pitch = 0.0, roll = 0.0) )
-		self.velocity = dict( x = 0., y = 0., z = 0., yaw = 0., pitch = 0., roll = 0.)
+		self.velocity = dict( x = 0., y = 0., z = 0., yaw = 0.)
 		self.set_state(ArDroneStates.Unknown)
 
 		self.battery = 100

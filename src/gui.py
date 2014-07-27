@@ -11,8 +11,11 @@ from lib.Quaternion import euler_from_quaternion
 
 from lib.Signals import SignalResponse
 from ardrone_control.srv import OpenLoopCommand 
+from ardrone_control.msg import QuadrotorPose
 from ardrone_autonomy.msg import Navdata 
 from geometry_msgs.msg import Twist
+from geometry_msgs.msg import Quaternion as QuaternionMsg
+
 from sensor_msgs.msg import CompressedImage, Image 
 from nav_msgs.msg import Odometry
 import dynamic_reconfigure.client
@@ -49,7 +52,10 @@ class MplPlot(object):
 		
 class ArDronePlotCanvas(FigureCanvas):
 	"""docstring for MyPlot"""
-	COLOR_LIST = ['r', 'g', 'b', 'y', 'c', 'm', 'k', 'k--'] 
+	COLOR_LIST = [
+		'r', 'g', 'b', 'y', 'c', 'm', 'k',
+		'r--', 'g--', 'b--', 'y--', 'c--', 'm--', 'k--'] 
+	
 	def __init__(self, *args, **kwargs):
 		self.fig = Figure( figsize=(kwargs.get('width'), kwargs.get('height')), dpi=kwargs.get('dpi') )
 		self.axes = self.fig.add_subplot(111)
@@ -57,26 +63,44 @@ class ArDronePlotCanvas(FigureCanvas):
 		self.axes.set_xlabel('time [s]')
 		self.fig.tight_layout()
 		
+		attribute_list = ['position', 'velocity', 'setPoint', 'cmdVel', 'quaternion']
+
 		self.checkBox = dict()
 		self.plots = dict()
 		self.plotHandles = dict()
-
-
-		self.plotNames = ["x", "y", "z", "yaw", 
-		"Quaternion x", "Quaternion y", "Quaternion z", "Quaternion w", 
-		"Velocity x", "Velocity y", "Velocity z", "Velocity yaw", 
-		"Set Point x", "Set Point y", "Set Point z", "Set Point yaw",
-		"Command Velocity x", "Command Velocity y", "Command Velocity z", "Command Velocity yaw",]
-
-		self.yLabel = { 
-			"x": "[m]", "y": "[m]",  "z": "[m]", "yaw": "[rad]", 
-			"Quaternion x": "","Quaternion y":  "","Quaternion z":  "","Quaternion w":  "", 
-			"Velocity x": "[m/s]","Velocity y":  "[m/s]","Velocity z":  "[m/s]","Velocity yaw":  "[rad/s]", 
-			"Set Point x": "[m]", "Set Point y": "[m]", "Set Point z": "[m]", "Set Point yaw": "[rad]",
-			"Command Velocity x": "[m/s]","Command Velocity y":  "[m/s]","Command Velocity z":  "[m/s]","Command Velocity yaw":  "[rad/s]",
-		}
+		self.yLabels = dict()
 		
+		self.activePlots = []
+		for attribute in attribute_list:
+			self.checkBox[attribute] = dict()
+			self.plots[attribute] = dict()
+			self.plotHandles[attribute] = dict()
+			self.yLabels[attribute] = dict()
+			#self.activePlots[attribute] = dict()
+
+		variables = ['x', 'y', 'z', 'yaw']
+		for dictionary in self.plots.values():
+			for variable in variables:
+				dictionary[variable] = 0.0
+
+		for attribute, yLabel in self.yLabels.items():
+			if attribute == 'quaternion':	
+				yLabel['x'] = yLabel['y'] = yLabel['z'] = yLabel['w'] = ''
+			else:
+				for variable in variables:
+					yLabel[variable] = '[{0}{1}]'.format( 'm' if variable != 'yaw' else 'rad' , 
+						'' if (attribute == 'position' or attribute == 'setPoint') else '/s' )
+			
+		print self.yLabels
+
+		
+		del(self.plots['quaternion']['yaw'])
+		self.plots['quaternion']['w'] = 1.0
+
+
 		self.reset()
+
+
 
 		FigureCanvas.__init__(self, self.fig)
 
@@ -88,10 +112,18 @@ class ArDronePlotCanvas(FigureCanvas):
 		layout = QtGui.QGridLayout()
 		self.reset()
 		i = 0
-		for plot in self.plotNames:
-			self.checkBox[plot] = QtGui.QCheckBox(plot, self)
-			layout.addWidget( self.checkBox[plot], i/4, i%4 )
-			i += 1
+		keys = ['x', 'y', 'z', 'yaw']
+		for plot_names, dictionaries in self.plots.items():
+			self.checkBox[plot_names] = dict()
+			for key in keys:
+				try:
+					self.checkBox[plot_names][key] = QtGui.QCheckBox( '{0} {1}'.format(key, plot_names), self)
+					layout.addWidget( self.checkBox[plot_names][key], i/4, i%4 )
+				except KeyError:
+					key = 'w'
+					self.checkBox[plot_names][key] = QtGui.QCheckBox( '{0} {1}'.format(key, plot_names), self)
+					layout.addWidget( self.checkBox[plot_names][key], i/4, i%4 )
+				i += 1
 
 		self.button = QtGui.QDialogButtonBox( 
 			QtGui.QDialogButtonBox.Ok|QtGui.QDialogButtonBox.Cancel, 
@@ -111,7 +143,12 @@ class ArDronePlotCanvas(FigureCanvas):
 		widget.exec_()	
 
 	def onOk(self):
-		self.activePlots = [name for name in self.plotNames if self.checkBox[name].isChecked()]
+		for attribute, checkBoxGroup in self.checkBox.items():
+			for variable, checkBox in checkBoxGroup.items():
+				if checkBox.isChecked():
+					self.activePlots.append( (attribute, variable) )
+
+		#self.activePlots = [name for name in self.plotNames if self.checkBox[name].isChecked()]
 		self.createPlotHandles()
 
 	def onCancel(self):
@@ -120,27 +157,28 @@ class ArDronePlotCanvas(FigureCanvas):
 
 	def reset( self ):
 		self.plotHandles = dict()
-		self.activePlots = []
 		
-		for key in self.plotNames:
-			self.plots[key] = MplPlot()
+		self.activePlots = list()
+
+		for dictionary in self.plots.values():
+			for key in dictionary.keys():
+				dictionary[key] = MplPlot()
+			#self.plots[key] = MplPlot()
 
 	def createPlotHandles( self ):
 		self.axes.clear() 
 		i = 0
 		yLabel = set()
 		for activePlot in self.activePlots:
-			self.plotHandles[activePlot], = self.axes.plot( [], [], self.COLOR_LIST[i], linewidth=2, label=activePlot ) 
-			yLabel.add( self.yLabel[activePlot] )
+			self.plotHandles[activePlot], = self.axes.plot( [], [], self.COLOR_LIST[i], linewidth=2, label=
+				'{0} {1} {2}'.format(activePlot[0], activePlot[1], self.yLabels[activePlot[0]][activePlot[1]] ) ) 
+			yLabel.add( self.yLabels[activePlot[0]][activePlot[1]] )
 			i+=1
 
-		if len(yLabel)==1:
-			self.axes.set_ylabel( yLabel.pop() )
-			self.axes.set_xlabel('time [s]')
-		else:
-			self.axes.set_ylabel('')
-			self.axes.set_xlabel('time [s]')
-		
+		self.axes.set_xlabel('time [s]')
+		if len(yLabel) == 1:
+			self.axes.set_ylabel(yLabel.pop())
+
 		self.axes.legend( self.plotHandles.values(), [plot.get_label() for plot in self.plotHandles.values()], loc='best', shadow=True)
 		self.fig.tight_layout()
 		self.draw()
@@ -148,7 +186,7 @@ class ArDronePlotCanvas(FigureCanvas):
 	def updateFigure(self):
 
 		for activePlot, plotHandle in self.plotHandles.items():
-			plotHandle.set_data( self.plots[activePlot].x , self.plots[activePlot].y)
+			plotHandle.set_data( self.plots[activePlot[0]][activePlot[1]].x , self.plots[activePlot[0]][activePlot[1]].y)
 		
 		self.axes.relim()
 		self.axes.autoscale_view()
@@ -169,7 +207,6 @@ class CameraCanvas(QtGui.QLabel):
 			)
 		self.setScaledContents(True)
 
-
 	def recieveImage(self, image):
 		self.pixmap = QtGui.QPixmap.fromImage( 
 			QtGui.QImage(image.data, image.width, image.height, image.step , image_format_table[image.encoding] )
@@ -178,8 +215,6 @@ class CameraCanvas(QtGui.QLabel):
 	def updateCamera(self):
 		self.setPixmap( self.pixmap.scaled( self.width(), self.height(), QtCore.Qt.KeepAspectRatioByExpanding) )
 		# QtCore.Qt.FastTransformation
-
-
 
 class ControllerSetupWizard(QtGui.QWizard):
 	"""docstring for ControllerSetupWizard"""
@@ -809,15 +844,14 @@ class MainWindow(QtGui.QMainWindow, object):
 			)
 
 		self.update_dict = dict(
-			recieveStateEstimation = False,
+			recieveEstimatedPose = False,
+			recieveEstimatedVel = False,
+			recieveDesiredPose = False,
+			recieveDesiredVel = False,
 			recieveCmdVel = False,
 			)
 
-		self.subscriber = dict( 
-			cmd_vel = rospy.Subscriber('cmd_vel', Twist, callback = self.recieveCmdVel),
-			state = rospy.Subscriber('ardrone/estimated_pose', Odometry, callback = self.recieveStateEstimation), 
-			#camera = rospy.Subscriber('ardrone/image_raw', Image, callback = self.recieveImage ),
-			)
+		
 		
 		self.pushButtons = dict()
 		self.radioButtons = dict()
@@ -845,14 +879,22 @@ class MainWindow(QtGui.QMainWindow, object):
 
 		self.initMenuBar()
 		self.initStatusBar()
-		#self.timer = QtCore.QTimer(self)
-		#QtCore.QObject.connect(self.timer, QtCore.SIGNAL("timeout()"), self.TimerEvent)
-		#self.timer.start( 100 )
-		#self.i = 0
+
 
 		timer = QtCore.QTimer(self)
 		QtCore.QObject.connect(timer, QtCore.SIGNAL("timeout()"), self.update)
 		timer.start(100)
+
+		self.subscriber = dict( 
+			cmd_vel = rospy.Subscriber('cmd_vel', Twist, callback = self.recieveCmdVel),
+			#state = rospy.Subscriber('ardrone/estimated_pose', Odometry, callback = self.recieveStateEstimation), 
+			estimated_pose = rospy.Subscriber('ardrone/sensor_fusion/pose', QuadrotorPose, callback = self.recieveEstimatedPose),
+			estimated_velocity = rospy.Subscriber('ardrone/sensor_fusion/velocity', QuadrotorPose, callback = self.recieveEstimatedVel),
+			estimated_quaternion = rospy.Subscriber('ardrone/sensor_fusion/estimated_quaternion', QuaternionMsg, callback = self.recieveEstimatedQuaternion),
+			desired_pose = rospy.Subscriber('ardrone/trajectory/pose', QuadrotorPose, callback = self.recieveDesiredPose),
+			desired_velocity = rospy.Subscriber('ardrone/trajectory/velocity', QuadrotorPose, callback = self.recieveDesiredVel),
+			commanded_velocity = rospy.Subscriber('cmd_vel', Twist, callback=self.recieveCmdVel)
+			)
 	
 	def initMainLayout( self ):
 		mainWidget = QtGui.QWidget( self )
@@ -899,7 +941,7 @@ class MainWindow(QtGui.QMainWindow, object):
 
 		layout = dict( )
 
-		self.groupBoxList = ['generalInfo', 'position', 'velocity', 'setPoint', 'setVelocity' ]
+		self.groupBoxList = ['generalInfo', 'position', 'velocity', 'setPoint', 'cmdVel' ]
 		
 		self.groupBox['generalInfo'] = QtGui.QGroupBox("General Info")
 		layout['generalInfo'] = QtGui.QHBoxLayout()
@@ -945,14 +987,14 @@ class MainWindow(QtGui.QMainWindow, object):
 		self.infoLabel['setPoint']['z'] = QtGui.QLabel( "z: ")
 		self.infoLabel['setPoint']['yaw'] = QtGui.QLabel( "yaw: ")
 
-		self.groupBox['setVelocity'] = QtGui.QGroupBox("Commanded Velocity")
-		layout['setVelocity'] = QtGui.QHBoxLayout()
+		self.groupBox['cmdVel'] = QtGui.QGroupBox("Commanded Velocity")
+		layout['cmdVel'] = QtGui.QHBoxLayout()
 
-		self.infoLabel['setVelocity'] = dict()
-		self.infoLabel['setVelocity']['x'] = QtGui.QLabel("x: {0:.2f}".format( self.commander.velocity['x'] ) )
-		self.infoLabel['setVelocity']['y'] = QtGui.QLabel("y: {0:.2f}".format( self.commander.velocity['y'] ) )
-		self.infoLabel['setVelocity']['z'] = QtGui.QLabel("z: {0:.2f}".format( self.commander.velocity['z'] ) )
-		self.infoLabel['setVelocity']['yaw'] = QtGui.QLabel("yaw: {0:.2f}".format( self.commander.velocity['yaw'] ) )
+		self.infoLabel['cmdVel'] = dict()
+		self.infoLabel['cmdVel']['x'] = QtGui.QLabel("x: {0:.2f}".format( self.commander.velocity['x'] ) )
+		self.infoLabel['cmdVel']['y'] = QtGui.QLabel("y: {0:.2f}".format( self.commander.velocity['y'] ) )
+		self.infoLabel['cmdVel']['z'] = QtGui.QLabel("z: {0:.2f}".format( self.commander.velocity['z'] ) )
+		self.infoLabel['cmdVel']['yaw'] = QtGui.QLabel("yaw: {0:.2f}".format( self.commander.velocity['yaw'] ) )
 
 
 		for group in self.groupBoxList:
@@ -964,7 +1006,7 @@ class MainWindow(QtGui.QMainWindow, object):
 			self.groupBox[group].setLayout( layout[group] )
 			self.layouts['stateDisplay'].addWidget( self.groupBox[group] )
 
-		self.updateSetPoint()
+		#self.updateSetPoint()
 
 	def initDirectCommandsLayout( self ):
 		self.groupBox['directCommand']  = QtGui.QGroupBox("Direct Commands")
@@ -996,7 +1038,7 @@ class MainWindow(QtGui.QMainWindow, object):
 		self.radioButtons['controlSource']['keyboard']  = QtGui.QRadioButton("Keyboard", self.groupBox['controlSource'], clicked=self.onControlSource)
 		self.radioButtons['controlSource']['textFile']  = QtGui.QRadioButton("Text File Way Points", self.groupBox['controlSource'], clicked=self.onControlSource)
 		self.radioButtons['controlSource']['function']  = QtGui.QRadioButton("Python Function", self.groupBox['controlSource'], clicked=self.onControlSource)
-		self.radioButtons['controlSource']['dialog']  = QtGui.QRadioButton("Dialog Window", self.groupBox['controlSource'], clicked=self.onControlSource)
+		self.radioButtons['controlSource']['dialog']  = QtGui.QRadioButton("Dialog Window for Position", self.groupBox['controlSource'], clicked=self.onControlSource)
 
 
 
@@ -1207,11 +1249,10 @@ class MainWindow(QtGui.QMainWindow, object):
 		elif self.radioButtons['controlSource']['dialog'].isChecked():
 			sp,ok = InputSetPointDialog().getValues()
 			if ok:
-				self.commander.x(sp[0])
-				self.commander.y(sp[1])
-				self.commander.z(sp[2])
-				self.commander.yaw(sp[3] * math.pi/180.0)
-
+				self.commander.position['x'] = sp[0]
+				self.commander.position['y'] = sp[1]
+				self.commander.position['z'] = sp[2]
+				self.commander.position['yaw'] = sp[3]* math.pi/180.0
 			self.unSelectRadioButtons('controlSource')
 		elif self.radioButtons['controlSource']['keyboard'].isChecked():
 			pass
@@ -1516,57 +1557,53 @@ class MainWindow(QtGui.QMainWindow, object):
 	def recieveCmdVel(self, twist):
 		if not self.update_dict[ inspect.stack()[0][3] ] :
 			return
-
 		self.update_dict[ inspect.stack()[0][3] ] = False
-				 
-		self.infoLabel['setVelocity']['x'].setText("x: {0:.2f}".format( twist.linear.x ))
-		self.infoLabel['setVelocity']['y'].setText("y: {0:.2f}".format( twist.linear.y ))
-		self.infoLabel['setVelocity']['z'].setText("z: {0:.2f}".format( twist.linear.z ))
-		self.infoLabel['setVelocity']['yaw'].setText("vyaw: {0:.2f}".format( twist.angular.z  * 180.0 / math.pi ))
+		pose_msg = QuadrotorPose()
+		pose_msg.x = twist.linear.x 
+		pose_msg.y = twist.linear.y 
+		pose_msg.z = twist.linear.z
+		pose_msg.yaw = twist.angular.z
 
-		t = rospy.get_time() - self.timeZero
-		self.plot.plots['Command Velocity x'].append( t, twist.linear.x )
-		self.plot.plots['Command Velocity y'].append( t, twist.linear.y )
-		self.plot.plots['Command Velocity z'].append( t, twist.linear.z )
-		self.plot.plots['Command Velocity yaw'].append( t, twist.angular.z )
-
-	def recieveStateEstimation(self, odometry):
+		self.parsePoseMsg( 'cmdVel', pose_msg )
+	
+	def recieveEstimatedPose( self, pose ):
 		if not self.update_dict[ inspect.stack()[0][3] ] :
 			return
 
 		self.update_dict[ inspect.stack()[0][3] ] = False
-				 
-		self.infoLabel['position']['x'].setText("x: {0:.2f}".format( odometry.pose.pose.position.x ))
-		self.infoLabel['position']['y'].setText("y: {0:.2f}".format( odometry.pose.pose.position.y ))
-		self.infoLabel['position']['z'].setText("z: {0:.2f}".format( odometry.pose.pose.position.z ))
-		yaw = euler_from_quaternion ( 
-				odometry.pose.pose.orientation.x, 
-				odometry.pose.pose.orientation.y, 
-				odometry.pose.pose.orientation.z, 
-				odometry.pose.pose.orientation.w )['yaw']
-		self.infoLabel['position']['yaw'].setText("yaw: {0:.2f}".format( yaw * 180.0 / math.pi ))
 
-		self.infoLabel['velocity']['x'].setText("x: {0:.2f}".format( odometry.twist.twist.linear.x ))
-		self.infoLabel['velocity']['y'].setText("y: {0:.2f}".format( odometry.twist.twist.linear.y ))
-		self.infoLabel['velocity']['z'].setText("z: {0:.2f}".format( odometry.twist.twist.linear.z ))
-		self.infoLabel['velocity']['yaw'].setText("vyaw: {0:.2f}".format( odometry.twist.twist.angular.z  * 180.0 / math.pi ))
+		self.parsePoseMsg( 'position', pose )
 
-		t = odometry.header.stamp.secs - self.timeZero
-		self.plot.plots['x'].append( t, odometry.pose.pose.position.x )
-		self.plot.plots['y'].append( t, odometry.pose.pose.position.y )
-		self.plot.plots['z'].append( t, odometry.pose.pose.position.z )
-		self.plot.plots['yaw'].append( t, yaw )
+	def recieveEstimatedVel( self, vel ):
+		if not self.update_dict[ inspect.stack()[0][3] ] :
+			return
 
-		self.plot.plots['Quaternion x'].append( t, odometry.pose.pose.orientation.x )
-		self.plot.plots['Quaternion y'].append( t, odometry.pose.pose.orientation.y )
-		self.plot.plots['Quaternion z'].append( t, odometry.pose.pose.orientation.z )
-		self.plot.plots['Quaternion w'].append( t, odometry.pose.pose.orientation.w )
+		self.update_dict[ inspect.stack()[0][3] ] = False
 
-		self.plot.plots['Velocity x'].append( t, odometry.twist.twist.linear.x )
-		self.plot.plots['Velocity y'].append( t, odometry.twist.twist.linear.y )
-		self.plot.plots['Velocity z'].append( t, odometry.twist.twist.linear.z )
-		self.plot.plots['Velocity yaw'].append( t, odometry.twist.twist.angular.z )
-	
+		self.parsePoseMsg( 'velocity', vel )
+
+	def recieveDesiredPose( self, pose ):
+		if not self.update_dict[ inspect.stack()[0][3] ] :
+			return
+
+		self.update_dict[ inspect.stack()[0][3] ] = False
+
+		self.parsePoseMsg( 'setPoint', pose )
+
+	def recieveDesiredVel( self, vel ):
+		pass
+
+	def recieveEstimatedQuaternion(self, quaternion_msg):
+		t = rospy.get_time() - self.timeZero
+		for key, plot in self.plot.plots['quaternion'].items():
+			plot.append(t, getattr(quaternion_msg, key))
+
+	def parsePoseMsg(self, attribute, pose_msg):
+		t = rospy.get_time() - self.timeZero
+		for key in self.infoLabel[attribute].keys():
+			self.infoLabel[attribute][key].setText("{0}: {1:.2f}".format( key, getattr(pose_msg, key) ) )
+			self.plot.plots[attribute][key].append( t, getattr(pose_msg, key) )
+
 	def updateControllerState( self ):
 		self.radioButtons['controllerType']['openLoop'].setChecked(not self.commander.controller_state)
 		self.radioButtons['controllerType']['closedLoop'].setChecked(self.commander.controller_state)
@@ -1575,20 +1612,6 @@ class MainWindow(QtGui.QMainWindow, object):
 		self.infoLabel['generalInfo']['batteryPercent'].setText("Battery Percent: {0}".format(self.commander.battery))
 		self.statusLabel.setText( "Ar.Drone State: <b> {0} </b> ".format( self.commander.get_state() )  )
 
-	def updateSetPoint( self ):
-		t = rospy.get_time() - self.timeZero
-
-		
-		self.infoLabel['setPoint']['x'].setText("x: {0:.2f}".format( self.commander.position['x'] ) )
-		self.infoLabel['setPoint']['y'].setText("y: {0:.2f}".format( self.commander.position['y'] ) )
-		self.infoLabel['setPoint']['z'].setText("z: {0:.2f}".format( self.commander.position['z'] ) )
-		self.infoLabel['setPoint']['yaw'].setText("yaw: {0:.2f}".format( 180./math.pi*self.commander.orientation.get_euler()['yaw'] ) )
-		
-		self.plot.plots['Set Point x'].append( t, self.commander.position['x'] )
-		self.plot.plots['Set Point y'].append( t, self.commander.position['y'] )
-		self.plot.plots['Set Point z'].append( t, self.commander.position['z'] )
-		self.plot.plots['Set Point yaw'].append( t, self.commander.orientation.get_euler()['yaw'] )
-
 	def updateCamera( self ):
 		self.cameraImage.updateCamera()
 
@@ -1596,7 +1619,8 @@ class MainWindow(QtGui.QMainWindow, object):
 		self.plot.updateFigure()
 
 	def update( self ):
-		self.updateSetPoint()
+		#self.updateSetPoint()
+		
 		self.updateGeneralInfo()
 		self.updatePlot()
 		self.updateCamera()

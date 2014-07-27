@@ -30,7 +30,7 @@ class QuadrotorTest(unittest.TestCase):
 		self.assertEquals(type(quad.position), dict)
 		self.assertEquals(type(quad.velocity), dict)
 		self.assertEquals(type(quad.orientation), Quaternion)
-		self.assertEquals(type(quad.state), str)
+		self.assertEquals(type(quad.state), ArDroneStates)
 		self.assertEquals(type(quad.battery), float)
 
 

@@ -15,20 +15,22 @@ from ardrone_autonomy.msg import Navdata
 from sensor_msgs.msg import Joy 
 
 from ardrone_control.srv import OpenLoopCommand 
+from ardrone_control.msg import QuadrotorPose
 
 import tf
 
 import sys
 from PyQt4 import QtGui, QtCore
+import inspect
 
 
-from math import pi , cos, sin 
-
+#from math import pi , cos, sin 
+import math
 STEP = dict( 
 	x = 0.1, 
 	y = 0.1, 
 	z = 0.1, 
-	yaw = pi/36.0)
+	yaw = math.pi/36.0)
 COMMAND_TIME = 0.01
 
 class ArdroneCommander(Quadrotor, object):
@@ -36,14 +38,13 @@ class ArdroneCommander(Quadrotor, object):
 	def __init__(self, **kwargs):
 		super(ArdroneCommander, self).__init__( **kwargs )
 		self.commander = Commands()
-		
-		#self.publisher_frame = 'local'
-		
+				
 		self.signal = [ ]
 		
 		self.publisher = dict( 
 			controller_state = rospy.Publisher('ardrone/controller_state', Bool, latch = True),
-			trajectory = rospy.Publisher('ardrone/desired_pose', Odometry)
+			desired_pose = rospy.Publisher('ardrone/trajectory/pose', QuadrotorPose),
+			desired_velocity = rospy.Publisher('ardrone/trajectory/velocity', QuadrotorPose),
 			)
 
 		self.subscriber = dict( 
@@ -58,8 +59,6 @@ class ArdroneCommander(Quadrotor, object):
 			goal_tf = tf.TransformBroadcaster() 
 			)
 		
-		# self.tfListener = tf.TransformListener()
-
 		self.timer = dict( 
 			trajectory = rospy.Timer(rospy.Duration( COMMAND_TIME ), self.talk, oneshot=False) 
 			)
@@ -67,10 +66,8 @@ class ArdroneCommander(Quadrotor, object):
 		self.controller_state  = False #on or off 
 
 	def talk( self, time_data ):
-		if self.controller_state:
-			self.publish_goal()
-		elif self.state == ArDroneStates.Flying or self.state == ArDroneStates.Hovering: #flying or hovering
-			self.commander.velocity( self.velocity ) 
+		self.publisher['desired_pose'].publish( self.get_msg(self.position) )
+		self.publisher['desired_velocity'].publish( self.get_msg(self.velocity) ) 
 			
 	def publish_controller_state( self ):
 		msg = Bool()
@@ -78,41 +75,12 @@ class ArdroneCommander(Quadrotor, object):
 		rospy.logwarn("{0} Controller".format('Activating' if self.controller_state else 'Deactivating'))
 		self.publisher['controller_state'].publish(msg)
 
-	def publish_goal( self ):
-		msg = Odometry( )
-		msg.header.stamp = rospy.Time.now()
-		msg.header.frame_id = "/nav"
-		msg.child_frame_id = "/goal" 
+	def get_msg( self, attribute ):
+		msg = QuadrotorPose()
+		for key, value in attribute.items():
+			setattr(msg, key, value)
 
-		# position
-		msg.pose.pose.position.x = self.position['x']
-		msg.pose.pose.position.y = self.position['y']
-		msg.pose.pose.position.z = self.position['z']
-
-		# orientation
-		msg.pose.pose.orientation.x = self.orientation.x
-		msg.pose.pose.orientation.y = self.orientation.y
-		msg.pose.pose.orientation.z = self.orientation.z
-		msg.pose.pose.orientation.w = self.orientation.w
-		
-		# linear velocity
-		msg.twist.twist.linear.x = self.velocity['x']
-		msg.twist.twist.linear.y = self.velocity['y']
-		msg.twist.twist.linear.z = self.velocity['z']
-
-		# angular velocity
-		msg.twist.twist.angular.x = self.velocity['roll']
-		msg.twist.twist.angular.y = self.velocity['pitch']
-		msg.twist.twist.angular.z = self.velocity['yaw']
-
-		self.publisher['trajectory'].publish(msg)
-
-		self.tf_broadcaster['goal_tf'].sendTransform( 
-			(self.position['x'], self.position['y'], self.position['z']) , 
-            self.orientation.get_quaternion(),
-            msg.header.stamp, 
-            msg.child_frame_id, 
-            msg.header.frame_id)
+		return msg 
 
 	def outdoor( self ):
 		rospy.set_param('/ardrone_autonomy/outdoor', 1)
@@ -176,42 +144,38 @@ class ArdroneCommander(Quadrotor, object):
 	def recieve_navdata( self, navdata ):
 		self.set_state( navdata.state )
 		self.battery = navdata.batteryPercent
-		#self.position['yaw'] = navdata.rotZ * pi / 180.0 
 
 	def change_set_point( self, direction, scale ):
 		self.position[direction] += scale * STEP[ direction ]
 	
+	def change_velocity( self, direction, scale):
+		self.velocity[direction] = scale * STEP[direction]
+
 	def x( self, scale ):
-		if self.controller_state:
-			self.change_set_point( 'x', scale )
-		else:
-			self.velocity['x'] = scale
+		self.change_set_point( 'x', scale )
 
 	def y( self, scale ):
-		if self.controller_state:
-			self.change_set_point( 'y', scale )
-		else:
-			self.velocity['y'] = scale;
+		self.change_set_point( 'y', scale )
 
 	def z( self, scale ):
-		if self.controller_state:
-			self.change_set_point( 'z', scale )
-		else:
-			self.velocity['z'] = scale;
+		self.change_set_point( 'z', scale )
 
 	def yaw( self, scale ):
-		if self.controller_state:
-			self.change_set_point( 'yaw', scale )
-			if self.position['yaw'] >  pi :
-				self.position['yaw'] -= 2 * pi;
-			if self.position['yaw'] <= -pi:
-				self.position['yaw'] += 2 * pi;
+		self.change_set_point( 'yaw', scale )
+		self.position['yaw'] = math.atan2( math.sin(self.position['yaw']), math.cos(self.position['yaw']) )
+		self.orientation.set_euler( dict( yaw=self.position['yaw'], pitch = 0.0, roll = 0.0 ) )
 
-			#orientation changes over CHANGED yaw angle
-			self.orientation.set_euler( dict( yaw=self.position['yaw'], pitch = 0.0, roll = 0.0 ) )
+	def vx( self, scale ):
+		self.change_velocity( 'x', scale )
 
-		else:
-			self.velocity['yaw'] = scale;
+	def vy( self, scale ):
+		self.change_velocity( 'y', scale )
+
+	def vz( self, scale ):
+		self.change_velocity( 'z', scale )
+
+	def vyaw( self, scale ):
+		self.change_velocity( 'yaw', scale )
 
 	def control_on( self, *args ):
 		self.controller_state = True 
@@ -421,7 +385,7 @@ class KeyBoardController(ArdroneCommander, QtGui.QWidget, object):
 		
 def main():
 	rospy.init_node('ardrone_commander', anonymous = True)
-	command_method = rospy.get_param("ardrone_commander/command_method")
+	command_method = rospy.get_param("ardrone_commander/command_method", 'PS3')
 	if command_method == 'PS3':
 		commander = JoystickController( joy = PS3() )
 	elif command_method == 'PS2':

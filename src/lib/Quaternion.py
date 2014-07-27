@@ -224,6 +224,12 @@ class Quaternion(object):
 
 		return self
 
+	def get_yaw(self):
+		return atan2( 
+			2.* (self.x * self.y + self.z * self.w), 
+			2.* ( 0.5 - ( self.y**2 + self.z**2 ) ) 
+			)
+
 	@property 
 	def x(self):
 		return self.properties.get('x', 0.)

@@ -9,8 +9,9 @@ from lib import Controllers
 from lib import QuadrotorCommands
 
 from nav_msgs.msg import Odometry 
-from diagnostic_msgs.msg import KeyValue
 from std_msgs.msg import Bool 
+
+from ardrone_control.msg import QuadrotorPose
 
 from dynamic_reconfigure.server import Server
 from ardrone_control.cfg import ControllerConfig
@@ -32,8 +33,10 @@ class Controller(Quadrotor, object):
 		#self.controller_state = False
 
 		self.subscriber = dict(
-			estimated_pose = rospy.Subscriber('ardrone/estimated_pose', Odometry, callback = self.recieve_estimation),
-			desired_pose = rospy.Subscriber('ardrone/desired_pose', Odometry, callback = self.recieve_desired),
+			estimated_pose = rospy.Subscriber('ardrone/sensor_fusion/pose', QuadrotorPose, callback = self.recieve_estimated_pose),
+			estimated_velocity = rospy.Subscriber('ardrone/sensor_fusion/pose', QuadrotorPose, callback = self.recieve_estimated_velocity),
+			desired_pose = rospy.Subscriber('ardrone/trajectory/pose', QuadrotorPose, callback = self.recieve_desired_pose),
+			desired_velocity = rospy.Subscriber('ardrone/trajectory/velocity', QuadrotorPose, callback = self.recieve_desired_velocity),
 			controller_state = rospy.Subscriber('ardrone/controller_state', Bool, callback = self.recieve_state),
 		)
 
@@ -46,8 +49,10 @@ class Controller(Quadrotor, object):
 		now_time = rospy.get_time()
 		
 		self.callback_time = dict(
-			recieve_estimation = now_time, 
-			recieve_desired = now_time
+			recieve_estimated_pose = now_time, 
+			recieve_estimated_velocity = now_time, 
+			recieve_desired_pose = now_time, 
+			recieve_desired_velocity = now_time, 
 			)
 
 		#self.tfListener = tf.TransformListener()
@@ -92,7 +97,8 @@ class Controller(Quadrotor, object):
 
 	def default_init(self):
 		self.controller_state = False
-		PID_PARAMS = rospy.get_param( '/controller/PID_Gains' )
+		default = dict(x = dict(P = 1.0, D = 0.0, I = 0.0), y = dict(P = 1.0, D = 0.0, I = 0.0), z= dict(P = 1.0, D = 0.0, I = 0.0), yaw = dict(P = 1.0, D = 0.0, I = 0.0) )
+		PID_PARAMS = rospy.get_param( '/controller/PID_Gains', default )
 		self.controller = dict()
 		for key, controller_dict in PID_PARAMS.items():
 			self.controller[ key.lower() ] = Controllers.PID( 
@@ -102,29 +108,6 @@ class Controller(Quadrotor, object):
 				)
 		self.controller['yaw'].periodic = True
 
-
-		"""
-		self.controller = dict(
-			x = Controllers.PID( 
-				Kp =PID_PARAMS['X']['P'],
-				Ki =PID_PARAMS['X']['I'],
-				Kd =PID_PARAMS['X']['D'],
-				),
-			y = Controllers.PID( 
-				Kp =PID_PARAMS['Y']['P'],
-				Ki =PID_PARAMS['Y']['I'],
-				Kd =PID_PARAMS['Y']['D'], ),
-			z = Controllers.PID( 
-				Kp =PID_PARAMS['Z']['P'],
-				Ki =PID_PARAMS['Z']['I'],
-				Kd =PID_PARAMS['Z']['D'],),
-			yaw = Controllers.PID( 
-				Kp =PID_PARAMS['Yaw']['P'],
-				Ki =PID_PARAMS['Yaw']['I'],
-				Kd =PID_PARAMS['Yaw']['D'],
-				periodic = True)
-			)
-		"""
 		rospy.logwarn("\nController Configuration Inited by Default to:\nX Controller is type PID with {0} \nY Controller is type PID with {1}\nZ Controller is type PID with {2} \nYaw Controller is type PID with {3} ".format(
 			str(self.controller['x']), str(self.controller['y']), str(self.controller['z']), str(self.controller['yaw']) ) )
 
@@ -136,83 +119,24 @@ class Controller(Quadrotor, object):
 		self.callback_time[ callback_name ] = aux_time
 		return dt 
 
-	def recieve_odometry( self, odometry, method_str , dt = COMMAND_TIME):
-		euler_dict = euler_from_quaternion( 
-				odometry.pose.pose.orientation.x,
-				odometry.pose.pose.orientation.y,
-				odometry.pose.pose.orientation.z,
-				odometry.pose.pose.orientation.w
-				)
-
+	def recieve_estimated_pose( self, pose ):
+		dt = self.update_callback_time( inspect.stack()[0][3] )
 		for key, siso_controller in self.controller.items():
-			if type(siso_controller) == Controllers.TrajectoryPID:
-				if key != 'yaw':
-					getattr( siso_controller, method_str)( 
-						getattr(odometry.pose.pose.position, key), 
-						getattr(odometry.twist.twist.linear, key),
-						dt 
-						) 
-				else:
-					getattr( siso_controller, method_str)( 
-						euler_dict['yaw'],
-						odometry.twist.twist.angular.z,
-						dt 
-						) 
+			siso_controller.input_measurement( getattr(pose, key), dt )
 
+	def recieve_estimated_velocity( self, velocity ):
+		dt = self.update_callback_time( inspect.stack()[0][3] )
+		pass 
 
-			elif type(siso_controller) == Controllers.PID:
-				if key != 'yaw':
-					getattr( siso_controller, method_str)(  getattr(odometry.pose.pose.position, key),  dt ) 
-				else:
-					getattr( siso_controller, method_str)( euler_dict['yaw'], dt ) 
-			else:
-				if key != 'yaw':
-					getattr( siso_controller, method_str)( getattr(odometry.pose.pose.position, key) )
-				else:
-					getattr( siso_controller, method_str)( euler_dict['yaw'] ) 
+	def recieve_desired_pose( self, pose ):
+		dt = self.update_callback_time( inspect.stack()[0][3] )
+		for key, siso_controller in self.controller.items():
+			siso_controller.change_set_point( getattr(pose, key), dt )
 
-	def recieve_estimation( self, odometry ):
-		self.recieve_odometry( odometry, 'input_measurement', self.update_callback_time( inspect.stack()[0][3] ) )
-		# euler_dict = Quaternion.euler_from_quaternion( 
-		# 		odometry.pose.pose.orientation.x,
-		# 		odometry.pose.pose.orientation.y,
-		# 		odometry.pose.pose.orientation.z,
-		# 		odometry.pose.pose.orientation.w
-		# 		)
-
-		# if type(self.controller) == Controllers.TrajectoryPID:
-		# 	self.controller['x'].input_measurement( odometry.pose.pose.position.x, odometry.twist.twist.linear.x )
-		# 	self.controller['y'].input_measurement( odometry.pose.pose.position.y, odometry.twist.twist.linear.y )
-		# 	self.controller['z'].input_measurement( odometry.pose.pose.position.z, odometry.twist.twist.linear.z )
-		# 	self.controller['yaw'].input_measurement( euler_dict['yaw'], odometry.twist.twist.angular.z )
-
-		# else:
-		# 	self.controller['x'].input_measurement( odometry.pose.pose.position.x )
-		# 	self.controller['y'].input_measurement( odometry.pose.pose.position.x )
-		# 	self.controller['z'].input_measurement( odometry.pose.pose.position.z )
-		# 	self.controller['yaw'].input_measurement( euler_dict['yaw'] )
-
-	def recieve_desired( self, odometry ):
-		self.recieve_odometry( odometry, 'change_set_point', self.update_callback_time( inspect.stack()[0][3] ) )
-
-		# euler_dict = Quaternion.euler_from_quaternion( 
-		# 		odometry.pose.pose.orientation.x,
-		# 		odometry.pose.pose.orientation.y,
-		# 		odometry.pose.pose.orientation.z,
-		# 		odometry.pose.pose.orientation.w
-		# 		)
-
-		# if type(self.controller) == Controllers.TrajectoryPID:
-		# 	self.controller['x'].change_set_point( odometry.pose.pose.position.x, odometry.twist.twist.linear.x )
-		# 	self.controller['y'].change_set_point( odometry.pose.pose.position.y, odometry.twist.twist.linear.y )
-		# 	self.controller['z'].change_set_point( odometry.pose.pose.position.z, odometry.twist.twist.linear.z )
-		# 	self.controller['yaw'].change_set_point( euler_dict['yaw'], odometry.twist.twist.angular.z )
-
-		# else:
-		# 	self.controller['x'].change_set_point( odometry.pose.pose.position.x )
-		# 	self.controller['y'].change_set_point( odometry.pose.pose.position.x )
-		# 	self.controller['z'].change_set_point( odometry.pose.pose.position.z )
-		# 	self.controller['yaw'].change_set_point( euler_dict['yaw'] )
+	def recieve_desired_velocity( self, velocity ):
+		dt = self.update_callback_time( inspect.stack()[0][3] )
+		for key in self.velocity.keys():
+			self.velocity[key] = getattr(velocity, key)
 
 	def recieve_state( self, boolean ):
 		self.controller_state = boolean.data 
@@ -224,6 +148,8 @@ class Controller(Quadrotor, object):
 			for key, siso_controller in self.controller.items():
 				velocity[key] = siso_controller.get_output()
 			self.commander.velocity( velocity )
+		else:
+			self.commander.velocity( self.velocity )
 
 def main():
 	rospy.init_node('ardrone_controller', anonymous = True)
