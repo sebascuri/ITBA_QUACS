@@ -1,0 +1,2 @@
+bool on 
+bool position

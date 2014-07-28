@@ -9,9 +9,10 @@ from lib import Controllers
 from lib import QuadrotorCommands
 
 from nav_msgs.msg import Odometry 
-from std_msgs.msg import Bool 
+#from std_msgs.msg import Bool 
 
 from ardrone_control.msg import QuadrotorPose
+from ardrone_control.msg import ControllerState as ControllerStateMsg
 
 from dynamic_reconfigure.server import Server
 from ardrone_control.cfg import ControllerConfig
@@ -30,14 +31,14 @@ class Controller(Quadrotor, object):
 		self.default_init()
 		self.srv = Server(ControllerConfig, self.configure_controller )
 
-		#self.controller_state = False
+		self.controller_state = Controllers.ControllerState()
 
 		self.subscriber = dict(
 			estimated_pose = rospy.Subscriber('ardrone/sensor_fusion/pose', QuadrotorPose, callback = self.recieve_estimated_pose),
 			estimated_velocity = rospy.Subscriber('ardrone/sensor_fusion/pose', QuadrotorPose, callback = self.recieve_estimated_velocity),
 			desired_pose = rospy.Subscriber('ardrone/trajectory/pose', QuadrotorPose, callback = self.recieve_desired_pose),
 			desired_velocity = rospy.Subscriber('ardrone/trajectory/velocity', QuadrotorPose, callback = self.recieve_desired_velocity),
-			controller_state = rospy.Subscriber('ardrone/controller_state', Bool, callback = self.recieve_state),
+			controller_state = rospy.Subscriber('ardrone/controller_state', ControllerStateMsg, callback = self.recieve_state),
 		)
 
 		self.commander = QuadrotorCommands.Commands()
@@ -138,18 +139,24 @@ class Controller(Quadrotor, object):
 		for key in self.velocity.keys():
 			self.velocity[key] = getattr(velocity, key)
 
-	def recieve_state( self, boolean ):
-		self.controller_state = boolean.data 
-		rospy.logwarn( 'Controller succesfully {0}activated!'.format( '' if self.controller_state else 'de' ) )
+	def recieve_state( self, controller_state ):
+		self.controller_state.set_state( controller_state ) 
+		rospy.logwarn( 'Controller succesfully {0}activated!'.format( '' if self.controller_state.on else 'de' ) )
+		if self.controller_state.on:
+			rospy.logwarn( '{0} Control'.format('position' if self.controller_state.position else 'velocity'))
 
 	def publish_twist( self, time ):
-		if self.controller_state:
-			velocity = dict()
-			for key, siso_controller in self.controller.items():
-				velocity[key] = siso_controller.get_output()
-			self.commander.velocity( velocity )
+		if not self.controller_state.on:
+			return
 		else:
-			self.commander.velocity( self.velocity )
+			velocity = dict()
+			if self.controller_state.position:
+				for key, siso_controller in self.controller.items():
+					velocity[key] = siso_controller.get_output()
+			else:
+				velocity = self.velocity 
+			self.commander.velocity( velocity )
+
 
 def main():
 	rospy.init_node('ardrone_controller', anonymous = True)

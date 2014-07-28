@@ -950,9 +950,9 @@ class MainWindow(QtGui.QMainWindow, object):
 		#self.infoLabel['generalInfo']['controller'] = QtGui.QLabel( "Controller Type: ")
 
 		self.radioButtons['controllerType'] = dict()
-		self.radioButtons['controllerType']['openLoop'] = QtGui.QRadioButton("Open Loop", self.groupBox['generalInfo'], clicked=self.onControllerSelect)
+		self.radioButtons['controllerType']['openLoop'] = QtGui.QRadioButton("Velocity Control", self.groupBox['generalInfo'], clicked=self.onControllerSelect)
 		self.radioButtons['controllerType']['openLoop'].setChecked(not self.commander.controller_state)
-		self.radioButtons['controllerType']['closedLoop'] = QtGui.QRadioButton("Closed Loop", self.groupBox['generalInfo'], clicked=self.onControllerSelect)
+		self.radioButtons['controllerType']['closedLoop'] = QtGui.QRadioButton("Position Control", self.groupBox['generalInfo'], clicked=self.onControllerSelect)
 		self.radioButtons['controllerType']['closedLoop'].setChecked(self.commander.controller_state)
 
 		layout['generalInfo'].addWidget( self.infoLabel['generalInfo']['batteryPercent'] )

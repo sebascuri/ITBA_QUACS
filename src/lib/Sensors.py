@@ -8,6 +8,16 @@ from geometry_msgs.msg import Vector3, Vector3Stamped
 from math import cos, sin, atan2, asin, sqrt	
 
 
+#CAMERA PROCESSING
+import cv2
+import cv
+import numpy as np
+from matplotlib import pyplot as plt
+
+from cv_bridge import CvBridge, CvBridgeError
+import scipy.signal
+from collections import deque
+
 class GPS(object):
 	"""docstring for GPS
 	initial heading =  0 deg then x is pointing north 
@@ -357,4 +367,64 @@ class Camera(object):
 	"""docstring for Camera"""
 	def __init__(self, *kwargs):
 		super(Camera, self).__init__()
-		
+
+	def convert_image( self, ros_image_msg):
+
+		return CvBridge().imgmsg_to_cv2(ros_image_msg, desired_encoding="passthrough")
+
+	def measure(self, ros_image_msg): 
+		cv_image = self.convert_image( ros_image_msg )
+
+	def convert_to_gray(self, color_image):
+		return cv2.cvtColor(cv_image, cv2.COLOR_BGR2GRAY)
+	
+	def fft(self, gray_image):
+		f = np.fft.fft2(gray_image)
+		return f 
+	
+
+def main():
+	camera = Camera()
+	img = list()
+	f = list()
+
+	img.append( cv2.imread('frame0000.jpg', 0) )
+	img.append( cv2.imread('frame0001.jpg', 0) )
+
+	# Initiate STAR detector
+	orb = cv2.ORB()
+	kp = list()
+	for image in img:
+		f.append( camera.fft( image ) )
+		aux = orb.detect( image, None)
+
+		aux, des = orb.compute(image, aux)
+
+		kp.append(des)
+
+	print cv.FindHomography(  cv.fromarray( kp[0] ),  cv.fromarray( kp[1] ), 0)
+
+	"""
+	#Q = scipy.signal.fftconvolve( img[0], img[1] )
+	dx, dy = cv2.phaseCorrelate( np.float32(img[0]), np.float32(img[1]) )
+	print dx, dy 
+
+	
+
+	# find the keypoints with ORB
+	kp = orb.detect(img[0],None)
+
+	# compute the descriptors with ORB
+	kp, des = orb.compute(img[0], kp)
+	print kp 
+
+	print cv.FindHomography(srcPoints, dstPoints
+
+
+	# draw only keypoints location,not size and orientation
+	#img2 = cv2.drawKeypoints(img[0],kp,color=(0,255,0), flags=0)
+	#plt.imshow(img2),plt.show()
+	"""
+
+if __name__ == '__main__':
+	main()

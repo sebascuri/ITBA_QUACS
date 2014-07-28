@@ -55,6 +55,7 @@ catkin_python_setup()
 add_message_files(
   FILES
   QuadrotorPose.msg
+  ControllerState.msg
 #   Message2.msg
 )
 

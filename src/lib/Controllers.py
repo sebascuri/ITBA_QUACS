@@ -8,22 +8,13 @@ import math
 import Filter 
 
 class ControllerState(object):
-	STATES = ['Unkown', 'OpenLoop', 'ClosedLoop']
 	def __init__(self, *args, **kwargs):
-		self.set_state('Unkown')
-		if len(args) == 1:
-			self.set_state( args[0] )
-		if 'state' in kwargs.keys():
-			self.set_state( kwargs.get('state') )
+		self.on = False
+		self.position = False
 
 	def set_state(self, new_state):
-		if type(new_state) == int:
-			self.state = ControllerState.STATES[new_state]
-		elif type(new_state) == str and new_state in ControllerState.STATES:
-			self.state = new_state
-		else:
-			self.state = 'Unknown'
-
+		self.on = new_state.on 
+		self.position = new_state.position
 
 class Digital(Filter.Digital, object):
 	"""docstring for Digital"""

@@ -10,12 +10,13 @@ import rospy
 from nav_msgs.msg import Odometry 
 from geometry_msgs.msg import Vector3Stamped, Twist 
 #from diagnostic_msgs.msg import KeyValue
-from std_msgs.msg import Bool 
+#from std_msgs.msg import Bool 
 from ardrone_autonomy.msg import Navdata 
 from sensor_msgs.msg import Joy 
 
 from ardrone_control.srv import OpenLoopCommand 
 from ardrone_control.msg import QuadrotorPose
+from ardrone_control.msg import ControllerState
 
 import tf
 
@@ -42,7 +43,7 @@ class ArdroneCommander(Quadrotor, object):
 		self.signal = [ ]
 		
 		self.publisher = dict( 
-			controller_state = rospy.Publisher('ardrone/controller_state', Bool, latch = True),
+			controller_state = rospy.Publisher('ardrone/controller_state', ControllerState, latch = True),
 			desired_pose = rospy.Publisher('ardrone/trajectory/pose', QuadrotorPose),
 			desired_velocity = rospy.Publisher('ardrone/trajectory/velocity', QuadrotorPose),
 			)
@@ -73,9 +74,14 @@ class ArdroneCommander(Quadrotor, object):
 			self.publisher['desired_velocity'].publish( self.get_msg( dict(x = 0.0, y=0.0, z = 0.0, yaw = 0.0) ) )
 			
 	def publish_controller_state( self ):
-		msg = Bool()
-		msg.data = self.controller_state
-		rospy.logwarn("{0} Controller".format('Activating' if self.controller_state else 'Deactivating'))
+		msg = ControllerState()
+
+		msg.on = (self.state == ArDroneStates.Flying or self.state == ArDroneStates.Hovering)
+		msg.position = self.controller_state
+
+		rospy.logwarn("{0} Controller".format('Activating' if msg.on else 'Deactivating'))
+		if self.controller_state:
+			rospy.logwarn('Setting {0} Control'.format( 'position' if msg.position else 'velocity') )
 		self.publisher['controller_state'].publish(msg)
 
 	def get_msg( self, attribute ):
