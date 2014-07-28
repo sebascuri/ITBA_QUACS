@@ -30,10 +30,10 @@ class PS3(object):
 		)
 
 	COMMAND = dict(
-		R3_UD 	= 'x',
-		R3_LR 	= 'y',
-		L3_UD 	= 'z',
-		L3_LR 	= 'yaw',
+		R3_UD 	= 'vx',
+		R3_LR 	= 'vy',
+		L3_UD 	= 'vz',
+		L3_LR 	= 'vyaw',
 		cross	= 'take_off', 
 		circle 	= 'land',
 		tringle = 'reset',
@@ -74,10 +74,10 @@ class PS2(object):
 		)
 
 	COMMAND = dict(
-		R3_UD 	= 'x',
-		R3_LR 	= 'y',
-		L3_UD 	= 'z',
-		L3_LR 	= 'yaw',
+		R3_UD 	= 'vx',
+		R3_LR 	= 'vy',
+		L3_UD 	= 'vz',
+		L3_LR 	= 'vyaw',
 		cross	= 'take_off', 
 		circle 	= 'land',
 		tringle = 'reset',
@@ -116,10 +116,10 @@ class Wii(object):
 		)
 	
 	COMMAND = dict(
-		roll = 'x',
-		pitch = 'y',
-		az = 'z',
-		yaw = 'yaw',
+		roll = 'vx',
+		pitch = 'vy',
+		az = 'vz',
+		yaw = 'vyaw',
 		A = 'take_off',
 		B = 'land',
 		one = 'control_on',

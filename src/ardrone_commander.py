@@ -66,8 +66,11 @@ class ArdroneCommander(Quadrotor, object):
 		self.controller_state  = False #on or off 
 
 	def talk( self, time_data ):
-		self.publisher['desired_pose'].publish( self.get_msg(self.position) )
-		self.publisher['desired_velocity'].publish( self.get_msg(self.velocity) ) 
+		if self.state == ArDroneStates.Flying or self.state == ArDroneStates.Hovering:
+			self.publisher['desired_pose'].publish( self.get_msg(self.position) )
+			self.publisher['desired_velocity'].publish( self.get_msg(self.velocity) ) 
+		else:
+			self.publisher['desired_velocity'].publish( self.get_msg( dict(x = 0.0, y=0.0, z = 0.0, yaw = 0.0) ) )
 			
 	def publish_controller_state( self ):
 		msg = Bool()
@@ -272,35 +275,76 @@ class KeyBoardController(ArdroneCommander, QtGui.QWidget, object):
 		self.initUI()
 
 	def initUI( self ):
-		lbl_x = QtGui.QLabel("Press IK to +- X", self)
-		lbl_y = QtGui.QLabel("Press JL to +- Y", self)
-		lbl_z = QtGui.QLabel("Press WS to +- Z", self)
-		lbl_yaw = QtGui.QLabel("Press AD to +- Yaw", self)
+		main_groupBox = QtGui.QGroupBox("Key Press Info:")
 
-		lbl_take_off =  QtGui.QLabel("Press Return to Take Off", self)
-		lbl_land =  QtGui.QLabel("Press Return to Landing", self)
-		lbl_reset =  QtGui.QLabel("Press Return to Reset", self)
+		group_list = ['position', 'velocity', 'direct', 'control', 'chirp']
+		coordinate_list = ['x', 'y', 'z', 'yaw']
+		labels = dict()
+		labels['velocity'] = dict()
+		labels['velocity']['x'] = QtGui.QLabel("IK")
+		labels['velocity']['y'] = QtGui.QLabel("LJ")
+		labels['velocity']['z'] = QtGui.QLabel("WS")
+		labels['velocity']['yaw'] = QtGui.QLabel("DA")
 
-		lbl_position =  QtGui.QLabel("Press C to control position ", self)
-		#lbl_local =  QtGui.QLabel("Press V to control velocity in local frame", self)
-		#lbl_global =  QtGui.QLabel("Press G to control velocity in global frame", self)
+		labels['position'] = dict()
+		labels['position']['x'] = QtGui.QLabel("Up-Down")
+		labels['position']['y'] = QtGui.QLabel("Right-Left")
+		labels['position']['z'] = QtGui.QLabel("Up-Down+Shift")
+		labels['position']['yaw'] = QtGui.QLabel("Right-Left+Shift")
 
-		lbl_chirp = QtGui.QLabel("Press 1, 2, 3, 4 to command a chirp in X, Y, Z, Yaw)", self)
+		labels['direct'] = dict()
+		labels['direct']['take_off'] = QtGui.QLabel("Return")
+		labels['direct']['land'] = QtGui.QLabel("Backspace")
+		labels['direct']['reset'] = QtGui.QLabel("Spacebar")
+		labels['direct']['stop'] = QtGui.QLabel("0")
 
-		lbl_cal = QtGui.QLabel("Press Z to Flat Trim and X to Calibrate Imu", self)
-		
-		self.resize(1000, 600)
-		self.center()
+		labels['control'] = dict()
+		labels['control']['position'] = QtGui.QLabel("C")
+		labels['control']['velocity'] = QtGui.QLabel("F")
+		labels['control']['flat_trim'] = QtGui.QLabel('Z')
+		labels['control']['imu_recalibrate'] = QtGui.QLabel('X')
 
-		vbox = QtGui.QVBoxLayout()
-		vbox.addWidget(lbl_x); vbox.addWidget(lbl_y); vbox.addWidget(lbl_z); vbox.addWidget(lbl_yaw);
-		vbox.addWidget(lbl_take_off); vbox.addWidget(lbl_reset); vbox.addWidget(lbl_land); 
-		vbox.addWidget(lbl_position); #vbox.addWidget(lbl_local);  vbox.addWidget(lbl_global); 
-		vbox.addWidget(lbl_chirp); vbox.addWidget(lbl_cal);
-		self.setLayout(vbox)
+		labels['chirp'] = dict()
+		labels['chirp']['x'] = QtGui.QLabel("1")
+		labels['chirp']['y'] = QtGui.QLabel("2")
+		labels['chirp']['z'] = QtGui.QLabel("3")
+		labels['chirp']['yaw'] = QtGui.QLabel("4")
+
+		layout = QtGui.QVBoxLayout()
+		for group in group_list:
+			other = False
+			sub_group = QtGui.QGroupBox(group)
+			sub_layout = QtGui.QGridLayout()
+			
+			i = 0
+			for coordinate in coordinate_list:
+				try:
+					sub_layout.addWidget( labels[group][coordinate], 1, i )
+					sub_layout.addWidget( QtGui.QLabel("<b>{0}</b>".format(coordinate)), 0, i )
+				except KeyError:
+					other = True 
+				i += 1
+			if other:
+				i = 0
+				for key, label in labels[group].items():
+					sub_layout.addWidget( labels[group][key], 1, i )
+					sub_layout.addWidget( QtGui.QLabel("<b>{0}</b>".format(key)), 0, i )
+					i += 1
+
+
+			sub_group.setLayout(sub_layout)
+			layout.addWidget(sub_group)
+
+		main_groupBox.setLayout( layout )
+
+		main_layout = QtGui.QVBoxLayout()
+		main_layout.addWidget(main_groupBox)
+		self.setLayout(main_layout)
+
+
 		self.setWindowTitle('Ar.Drone KeyBoard Control') 
 		QtGui.QApplication.setStyle(QtGui.QStyleFactory.create('Cleanlooks')) 
-		#self.setWindowIcon(QtGui.QIcon('figs/parrot_ar_drone.jpg'))   
+		self.setWindowIcon(QtGui.QIcon('figs/parrot_ar_drone.jpg'))   
 		self.show()
 
 	def center(self):
@@ -313,36 +357,22 @@ class KeyBoardController(ArdroneCommander, QtGui.QWidget, object):
 		key = event.key()
 		if event.isAutoRepeat():
 			return
-		if key == QtCore.Qt.Key_A:
-			self.yaw( -1 )
-		elif key == QtCore.Qt.Key_D:
-			self.yaw( +1 )
-		elif key == QtCore.Qt.Key_S:
-			self.z( -1 )
-		elif key == QtCore.Qt.Key_W:
-			self.z( +1)
-		elif key == QtCore.Qt.Key_I:
-			self.x( -1 )
-		elif key == QtCore.Qt.Key_K:
-			self.x( +1 )
-		elif key == QtCore.Qt.Key_L:
-			self.y( -1 )
-		elif key == QtCore.Qt.Key_J:
-			self.y( +1 )
-		elif key == QtCore.Qt.Key_Return:
+		
+		## Global Commands
+		if key == QtCore.Qt.Key_Return:
 			self.take_off()
 		elif key == QtCore.Qt.Key_Backspace:
 			self.land()
 		elif key == QtCore.Qt.Key_Space:
 			self.reset()
+		elif key == QtCore.Qt.Key_0:
+			self.stop()
 		elif key == QtCore.Qt.Key_C:
 			self.control_on()
 		elif key == QtCore.Qt.Key_F:
 			self.control_off()
-			#self.local_command_frame()			
 		elif key == QtCore.Qt.Key_G:
 			self.control_off()
-			#self.global_command_frame()	
 		elif key == QtCore.Qt.Key_1:
 			self.chirp_x()	
 		elif key == QtCore.Qt.Key_2:
@@ -356,7 +386,46 @@ class KeyBoardController(ArdroneCommander, QtGui.QWidget, object):
 		elif key == QtCore.Qt.Key_Z:
 			self.flat_trim()	
 		elif key == QtCore.Qt.Key_X:
-			self.imu_calibration()	
+			self.imu_calibration()
+
+		## Velocity Commands
+		if key == QtCore.Qt.Key_A:
+			self.vyaw( -1 )
+		elif key == QtCore.Qt.Key_D:
+			self.vyaw( +1 )
+		elif key == QtCore.Qt.Key_S:
+			self.vz( -1 )
+		elif key == QtCore.Qt.Key_W:
+			self.vz( +1)
+		elif key == QtCore.Qt.Key_I:
+			self.vx( -1 )
+		elif key == QtCore.Qt.Key_K:
+			self.vx( +1 )
+		elif key == QtCore.Qt.Key_L:
+			self.vy( -1 )
+		elif key == QtCore.Qt.Key_J:
+			self.vy( +1 )
+
+		## Position Commands
+		modifiers = QtGui.QApplication.keyboardModifiers()
+		if modifiers == QtCore.Qt.ShiftModifier:
+			if key == QtCore.Qt.Key_Left:
+				self.yaw( -1 )
+			elif key == QtCore.Qt.Key_Right:
+				self.yaw( +1 )
+			elif key == QtCore.Qt.Key_Down:
+				self.z( -1 )
+			elif key == QtCore.Qt.Key_Up:
+				self.z( +1 )
+		else:
+			if key == QtCore.Qt.Key_Left:
+				self.y( -1 )
+			elif key == QtCore.Qt.Key_Right:
+				self.y( +1 )
+			elif key == QtCore.Qt.Key_Down:
+				self.x( -1 )
+			elif key == QtCore.Qt.Key_Up:
+				self.x( +1 )
 
 	def keyReleaseEvent(self, event):
 		key = event.key()
@@ -385,7 +454,7 @@ class KeyBoardController(ArdroneCommander, QtGui.QWidget, object):
 		
 def main():
 	rospy.init_node('ardrone_commander', anonymous = True)
-	command_method = rospy.get_param("ardrone_commander/command_method", 'PS3')
+	command_method = rospy.get_param("ardrone_commander/command_method", '')
 	if command_method == 'PS3':
 		commander = JoystickController( joy = PS3() )
 	elif command_method == 'PS2':
