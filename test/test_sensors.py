@@ -1,10 +1,12 @@
-PKG = 'ardonre_control'
+#!/usr/bin/env python  
+# -*- coding: utf-8 -*-
+PKG = 'ardrone_control'
 import unittest
 import rostest
 import sys
-sys.path.append("../src/lib/")
+#sys.path.append("../src/lib/")
 
-import Sensors 
+from lib import Sensors
 import utm 
 
 from sensor_msgs.msg import Imu, Range, NavSatFix, Image, CameraInfo

@@ -4,21 +4,27 @@ PKG = 'ardonre_control'
 import unittest
 import rostest
 import sys
+import os 
 sys.path.append("../src/lib/")
 from collections import deque
 import numpy as np 
 
 
-from Filter import Digital, Mahoney, Magdwick 
+from lib.Filter import Digital, Mahoney, Magdwick 
 
 
-from Sensors import Accelerometer, Gyroscope, Magnetometer
-from Quaternion import Quaternion 
+from lib.Sensors import Accelerometer, Gyroscope, Magnetometer
+from lib.Quaternion import Quaternion 
 
 from sensor_msgs.msg import Imu 
 from geometry_msgs.msg import Vector3Stamped, Vector3 
 from math import pi
 
+import h5py
+
+pwd =  os.path.dirname(os.path.realpath(__file__))
+sys.path.append(pwd+"/FilterTestData/")
+from read_data import read_file
 
 ## A sample python unit test
 class FilterTest(unittest.TestCase):
@@ -27,11 +33,12 @@ class FilterTest(unittest.TestCase):
 		self.assertEquals(1, 1, "1!=1")
 
 	def test_digital_filter(self):
-		import h5py
-		with h5py.File('FilterTestData/y_raw.h5', 'r') as f:
+		
+		pwd =  os.path.dirname(os.path.realpath(__file__))
+		with h5py.File(pwd+'/FilterTestData/y_raw.h5', 'r') as f:
 			input_list = f['/raw'].value 
 
-		with h5py.File('FilterTestData/y_filter.h5', 'r') as f:
+		with h5py.File(pwd+'/FilterTestData/y_filter.h5', 'r') as f:
 			output_list = f['/filter'].value 
 
 		F = Digital( a = [-2.369513007182038, 2.313988414415879, -1.054665405878567, 0.187379492368185], b = [0.004824343357716, 0.019297373430865, 0.028946060146297, 0.019297373430865, 0.004824343357716])
@@ -45,18 +52,17 @@ class FilterTest(unittest.TestCase):
 			i+=1
 
 	def load_data(self):
-		sys.path.append("./FilterTestData")
-		from read_data import read_file
-		self.gyroscope = np.mat(read_file('FilterTestData/Gyroscope.txt'))
-		self.accelerometer = np.mat(read_file('FilterTestData/Accelerometer.txt'))
-		self.magnetometer = np.mat(read_file('FilterTestData/Magnetometer.txt'))
-		self.time = np.mat(read_file('FilterTestData/Time.txt'))
+		pwd =  os.path.dirname(os.path.realpath(__file__))
+		self.gyroscope = np.mat(read_file(pwd+'/FilterTestData/Gyroscope.txt'))
+		self.accelerometer = np.mat(read_file(pwd+'/FilterTestData/Accelerometer.txt'))
+		self.magnetometer = np.mat(read_file(pwd+'/FilterTestData/Magnetometer.txt'))
+		self.time = np.mat(read_file(pwd+'/FilterTestData/Time.txt'))
 
-		self.quaternion_madgwick_imu = np.roll( np.mat( read_file('FilterTestData/quaternion_madgwick_imu.txt') ), -1)
+		self.quaternion_madgwick_imu = np.roll( np.mat( read_file(pwd+'/FilterTestData/quaternion_madgwick_imu.txt') ), -1)
 	
-		self.quaternion_madgwick_marg = np.roll( np.mat( read_file('FilterTestData/quaternion_madgwick_marg.txt') ), -1 )
-		self.quaternion_mahoney_imu = np.roll( np.mat( read_file('FilterTestData/quaternion_mahoney_imu.txt') ), -1 )
-		self.quaternion_mahoney_marg = np.roll( np.mat( read_file('FilterTestData/quaternion_mahoney_marg.txt') ), -1 )
+		self.quaternion_madgwick_marg = np.roll( np.mat( read_file(pwd+'/FilterTestData/quaternion_madgwick_marg.txt') ), -1 )
+		self.quaternion_mahoney_imu = np.roll( np.mat( read_file(pwd+'/FilterTestData/quaternion_mahoney_imu.txt') ), -1 )
+		self.quaternion_mahoney_marg = np.roll( np.mat( read_file(pwd+'/FilterTestData/quaternion_mahoney_marg.txt') ), -1 )
 
 	def measure_time(self,i):
 		return self.time[i+1,0] - self.time[i,0]

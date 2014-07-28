@@ -1,0 +1,6 @@
+<launch>
+  <test test-name="test_filters" pkg="ardrone_control" type="test_filters.py" name="" clear_params="true"/>
+  <test test-name="test_quadrotor" pkg="ardrone_control" type="test_quadrotor.py" name="" clear_params="true"/>
+  <test test-name="test_quaternion" pkg="ardrone_control" type="test_quaternion.py" name="" clear_params="true"/>
+  <test test-name="test_sensors" pkg="ardrone_control" type="test_sensors.py" name="" clear_params="true"/>
+</launch>

@@ -198,3 +198,10 @@ CATKIN_DEPENDS ardrone_autonomy dynamic_reconfigure geometry_msgs nav_msgs roscp
 
 ## Add folders to be run by python nosetests
 catkin_add_nosetests(test)
+
+if (CATKIN_ENABLE_TESTING)
+  catkin_add_nosetests(test/test_filters.py)
+  catkin_add_nosetests(test/test_quadrotor.py)
+  catkin_add_nosetests(test/test_quaternion.py)
+  catkin_add_nosetests(test/test_sensors.py)
+endif()

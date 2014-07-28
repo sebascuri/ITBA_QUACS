@@ -1,12 +1,12 @@
 #!/usr/bin/python  
 # -*- coding: utf-8 -*-
-PKG = 'ardonre_control'
+PKG = 'ardrone_control'
 import unittest
 import rostest
 import sys
 sys.path.append("../src/lib/")
 
-from Quaternion import Quaternion 
+from lib.Quaternion import Quaternion 
 
 class QuaternionTest(unittest.TestCase):
 	## test 1 == 1

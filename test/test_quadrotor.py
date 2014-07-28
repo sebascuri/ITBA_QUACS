@@ -1,11 +1,14 @@
-PKG = 'ardonre_control'
+#!/usr/bin/env python  
+# -*- coding: utf-8 -*-
+
+PKG = 'ardrone_control'
 import unittest
 import rostest
 import sys
 sys.path.append("../src/lib/")
 
-from Quadrotor import Quadrotor, ArDroneStates
-from Quaternion import Quaternion
+from lib.Quadrotor import Quadrotor, ArDroneStates
+from lib.Quaternion import Quaternion
 
 ## A sample python unit test
 class QuadrotorTest(unittest.TestCase):
