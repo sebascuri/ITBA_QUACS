@@ -5,8 +5,7 @@ lib/
 include/
 
 # Ignore Pyc Files
-src/*.pyc
-src/lib/*.pyc 
+*.pyc
 
 #Ignore Figures
 src/figs/
