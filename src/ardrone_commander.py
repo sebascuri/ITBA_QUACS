@@ -66,7 +66,7 @@ class ArdroneCommander(Quadrotor, object):
 
 		self.controller_state  = False #on or off 
 
-	def talk( self, time_data ):
+	def talk( self, time_data ):		
 		if self.state == ArDroneStates.Flying or self.state == ArDroneStates.Hovering:
 			self.publisher['desired_pose'].publish( self.get_msg(self.position) )
 			self.publisher['desired_velocity'].publish( self.get_msg(self.velocity) ) 
@@ -77,6 +77,7 @@ class ArdroneCommander(Quadrotor, object):
 		msg = ControllerState()
 
 		msg.on = (self.state == ArDroneStates.Flying or self.state == ArDroneStates.Hovering)
+		msg.on = True #debug
 		msg.position = self.controller_state
 
 		rospy.logwarn("{0} Controller".format('Activating' if msg.on else 'Deactivating'))

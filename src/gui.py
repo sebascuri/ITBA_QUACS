@@ -90,11 +90,8 @@ class ArDronePlotCanvas(FigureCanvas):
 				for variable in variables:
 					yLabel[variable] = '[{0}{1}]'.format( 'm' if variable != 'yaw' else 'rad' , 
 						'' if (attribute == 'position' or attribute == 'setPoint') else '/s' )
-			
-		print self.yLabels
 
-		
-		del(self.plots['quaternion']['yaw'])
+		del self.plots['quaternion']['yaw']
 		self.plots['quaternion']['w'] = 1.0
 
 
@@ -116,14 +113,13 @@ class ArDronePlotCanvas(FigureCanvas):
 		for plot_names, dictionaries in self.plots.items():
 			self.checkBox[plot_names] = dict()
 			for key in keys:
-				try:
-					self.checkBox[plot_names][key] = QtGui.QCheckBox( '{0} {1}'.format(key, plot_names), self)
-					layout.addWidget( self.checkBox[plot_names][key], i/4, i%4 )
-				except KeyError:
+				if plot_names == 'quaternion' and key == 'yaw':
 					key = 'w'
-					self.checkBox[plot_names][key] = QtGui.QCheckBox( '{0} {1}'.format(key, plot_names), self)
-					layout.addWidget( self.checkBox[plot_names][key], i/4, i%4 )
+
+				self.checkBox[plot_names][key] = QtGui.QCheckBox( '{0} {1}'.format(key, plot_names), self)
+				layout.addWidget( self.checkBox[plot_names][key], i/4, i%4 )
 				i += 1
+
 
 		self.button = QtGui.QDialogButtonBox( 
 			QtGui.QDialogButtonBox.Ok|QtGui.QDialogButtonBox.Cancel, 
@@ -432,13 +428,20 @@ class InputSetPointDialog(QtGui.QDialog):
 	def __init__(self ):
 		super(InputSetPointDialog, self).__init__()
 		self.ok = False
-		self.coordinates = ['X', 'Y', 'Z', 'Yaw']
+		self.coordinates = ['x', 'y', 'z', 'yaw']
 		self.labels = dict()
 		self.box = dict()
 
 		#QtGui.QDoubleSpinBox()
-		i = 0
+		
 		layout = QtGui.QGridLayout()
+		layout.addWidget( QtGui.QLabel('Set Point Type'), 0, 0 )
+		combo = QtGui.QComboBox (); combo.addItems(['Position', 'Velocity'])
+		combo.activated[str].connect( self.onSetPointSelect )
+		self.set_point_type = 'Position'
+
+		layout.addWidget( combo, 0, 1 )
+		i = 1
 		for coordinate in self.coordinates:
 			self.labels[coordinate] = QtGui.QLabel( '{0} Set Point:'.format(coordinate) )
 			self.box[coordinate] = QtGui.QDoubleSpinBox()
@@ -447,12 +450,12 @@ class InputSetPointDialog(QtGui.QDialog):
 			layout.addWidget(self.labels[coordinate], i, 0)
 			layout.addWidget(self.box[coordinate], i, 1)
 			i += 1
-		self.box['Yaw'].setRange(-180, 180);
+		self.box['yaw'].setRange(-math.pi, math.pi);
 		self.button = QtGui.QDialogButtonBox( 
 			QtGui.QDialogButtonBox.Ok|QtGui.QDialogButtonBox.Cancel, 
 			QtCore.Qt.Horizontal )
 
-		layout.addWidget(self.button, 4, 0)
+		layout.addWidget(self.button, i, 0)
 
 
 		self.connect( self.button.button( QtGui.QDialogButtonBox.Ok ), QtCore.SIGNAL('clicked()'), self.onOk )
@@ -467,6 +470,9 @@ class InputSetPointDialog(QtGui.QDialog):
 		self.show()
 		self.exec_()
 
+	def onSetPointSelect(self, string):
+		self.set_point_type = string
+
 	def onOk( self ):
 		self.ok = True
 
@@ -474,7 +480,7 @@ class InputSetPointDialog(QtGui.QDialog):
 		self.ok = False
 
 	def getValues( self ):
-		return [self.box[coordinate].value() for coordinate in self.coordinates], self.ok 
+		return self.set_point_type, {coordinate:self.box[coordinate].value() for coordinate in self.coordinates}, self.ok 
 		
 class SignalSetupDialog(QtGui.QDialog):
 	"""docstring for SignalSetupDialog"""
@@ -850,9 +856,7 @@ class MainWindow(QtGui.QMainWindow, object):
 			recieveDesiredVel = False,
 			recieveCmdVel = False,
 			)
-
-		
-		
+	
 		self.pushButtons = dict()
 		self.radioButtons = dict()
 		self.comboBox = dict()
@@ -951,9 +955,9 @@ class MainWindow(QtGui.QMainWindow, object):
 
 		self.radioButtons['controllerType'] = dict()
 		self.radioButtons['controllerType']['openLoop'] = QtGui.QRadioButton("Velocity Control", self.groupBox['generalInfo'], clicked=self.onControllerSelect)
-		self.radioButtons['controllerType']['openLoop'].setChecked(not self.commander.controller_state)
+		self.radioButtons['controllerType']['openLoop'].setChecked(False)
 		self.radioButtons['controllerType']['closedLoop'] = QtGui.QRadioButton("Position Control", self.groupBox['generalInfo'], clicked=self.onControllerSelect)
-		self.radioButtons['controllerType']['closedLoop'].setChecked(self.commander.controller_state)
+		self.radioButtons['controllerType']['closedLoop'].setChecked(False)
 
 		layout['generalInfo'].addWidget( self.infoLabel['generalInfo']['batteryPercent'] )
 		layout['generalInfo'].addWidget( self.radioButtons['controllerType']['openLoop'] )
@@ -1038,7 +1042,7 @@ class MainWindow(QtGui.QMainWindow, object):
 		self.radioButtons['controlSource']['keyboard']  = QtGui.QRadioButton("Keyboard", self.groupBox['controlSource'], clicked=self.onControlSource)
 		self.radioButtons['controlSource']['textFile']  = QtGui.QRadioButton("Text File Way Points", self.groupBox['controlSource'], clicked=self.onControlSource)
 		self.radioButtons['controlSource']['function']  = QtGui.QRadioButton("Python Function", self.groupBox['controlSource'], clicked=self.onControlSource)
-		self.radioButtons['controlSource']['dialog']  = QtGui.QRadioButton("Dialog Window for Position", self.groupBox['controlSource'], clicked=self.onControlSource)
+		self.radioButtons['controlSource']['dialog']  = QtGui.QRadioButton("Dialog Window", self.groupBox['controlSource'], clicked=self.onControlSource)
 
 
 
@@ -1247,12 +1251,15 @@ class MainWindow(QtGui.QMainWindow, object):
 			else:
 				self.unSelectRadioButtons('controlSource')	
 		elif self.radioButtons['controlSource']['dialog'].isChecked():
-			sp,ok = InputSetPointDialog().getValues()
+			set_point_type, sp,ok = InputSetPointDialog().getValues()
 			if ok:
-				self.commander.position['x'] = sp[0]
-				self.commander.position['y'] = sp[1]
-				self.commander.position['z'] = sp[2]
-				self.commander.position['yaw'] = sp[3]* math.pi/180.0
+				if set_point_type == 'Position':
+					for key, value in sp.items():
+						getattr( self.commander, key )(value)
+				else:
+					for key, value in sp.items():
+						getattr( self.commander, 'v'+key)(value)
+
 			self.unSelectRadioButtons('controlSource')
 		elif self.radioButtons['controlSource']['keyboard'].isChecked():
 			pass

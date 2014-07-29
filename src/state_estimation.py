@@ -43,7 +43,7 @@ class StateEstimation(Quadrotor, object):
 			raw_navdata = rospy.Subscriber('ardrone/navdata',Navdata, callback = self.recieve_navdata ),
 			raw_gps = rospy.Subscriber('fix', NavSatFix, callback = self.recieve_gps),
 			raw_imu = rospy.Subscriber('ardrone/imu', Imu, callback = self.recieve_imu ),
-			raw_sonar = rospy.Subscriber('sonar_height', Range, callback = self.recieve_sonar ),
+			#raw_sonar = rospy.Subscriber('sonar_height', Range, callback = self.recieve_sonar ),
 			raw_mag = rospy.Subscriber('ardrone/mag', Vector3Stamped, callback = self.recieve_mag),
 			raw_bottom_camera = rospy.Subscriber('ardrone/bottom/image_raw', Image, callback = self.recieve_bottom_camera),
 		)
