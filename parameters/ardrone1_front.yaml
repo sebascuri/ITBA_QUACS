@@ -1,0 +1,20 @@
+image_width: 320
+image_height: 240
+camera_name: ardrone_front
+camera_matrix:
+  rows: 3
+  cols: 3
+  data: [222.327042668465, 0, 159.507766128686, 0, 222.128694227324, 113.917632415358, 0, 0, 1]
+distortion_model: plumb_bob
+distortion_coefficients:
+  rows: 1
+  cols: 5
+  data: [0.30272976538099, -0.530128610939958, 0.00334091774908487, -0.000829260788599329, 0]
+rectification_matrix:
+  rows: 3
+  cols: 3
+  data: [1, 0, 0, 0, 1, 0, 0, 0, 1]
+projection_matrix:
+  rows: 3
+  cols: 4
+  data: [606.759826660156, 0, -102.697109359473, 0, 0, 572.99072265625, -71.1581654248585, 0, 0, 0, 1, 0]
