@@ -8,7 +8,7 @@ import rospy;
 
 
 class ArDroneStates(object):
-	STATES = ['Unknown', 'Inited', 'Landed', 'Flying', 'Hovering','Test','Taking off', 'Flying2', 'Landed', 'Looping']
+	STATES = ['Unknown', 'Inited', 'Landed', 'Flying', 'Hovering','Test','Taking off', 'Flying', 'Landed', 'Looping']
 	for name in STATES:
 		vars()[name] = STATES.index(name)
 
@@ -31,6 +31,7 @@ class Quadrotor(object):
 		self.name = kwargs.get('name', "/local")
 		self.position = kwargs.get('position', dict( x=0. , y=0., z=0., yaw=0. ) )
 		self.velocity = kwargs.get('velocity', dict( x=0. , y=0., z=0., yaw=0. ) )
+		self.acceleration = kwargs.get('acceleration', dict( x=0. , y=0., z=0., yaw=0. ) )
 		self.orientation = kwargs.get('orientation', Quaternion(x=0., y=0., z=0., w=1.) )
  		self.state = ArDroneStates( kwargs.get('state',ArDroneStates.Unknown ))
  		self.battery = kwargs.get('battery', 100.)
@@ -65,6 +66,7 @@ def main():
 	print quad.state == 4
 	print quad.state == ArDroneStates.Hovering
 	print quad.state == 'Hovering'
+
 	
 
 if __name__ == "__main__": main()

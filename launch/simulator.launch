@@ -1,0 +1,19 @@
+<launch>
+<param name="ardrone/version" type="int" value="2" />
+
+<!-- rosrun gui -->
+<node name="ardrone_gui" pkg="ardrone_control" type="gui.py" respawn="false" output="screen" required="true" clear_params="true"/>
+<!-- rosrun controller -->
+<node name="controller" pkg="ardrone_control" type="controller.py" respawn="false" output="screen" clear_params="true">
+	<rosparam file="$(find ardrone_control)/parameters/PID_Parameters.yaml" command="load" />
+</node> 		
+<!-- rosrun state_estimation -->
+<node name="state_estimation" pkg="ardrone_control" type="state_estimation.py" respawn="false" output="screen" clear_params="true">
+	<rosparam file="$(find ardrone_control)/parameters/Filter_Parameters.yaml" command="load" />
+</node>  
+
+
+<!-- rosrun ardrone_control ardrone_simulator -->
+<node name="simulator" pkg="ardrone_control" type="ardrone_simulator.py" respawn="false" output="screen" /> 
+
+</launch>

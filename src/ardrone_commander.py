@@ -120,13 +120,20 @@ class ArdroneCommander(Quadrotor, object):
 
 	def land( self, *args ):
 		rospy.logwarn("Land Drone!")
+		self.control_off()
+		#self.signal_off()
 		self.commander.land() 
 
 	def stop( self, *args ):
 		self.control_off()
+		self.signal_off()
+		
+		rospy.logwarn("Stop!")
+		self._stop()
+
+	def _stop(self):
 		for key in self.velocity.keys():
 			self.velocity[key] = 0.0
-		rospy.logwarn("Stop!")
 		self.commander.velocity( self.velocity )
 
 	def toggle_cam( self, *args ):
@@ -197,12 +204,14 @@ class ArdroneCommander(Quadrotor, object):
 
 	def signal_init( self, signal_data ):
 		# inits signal
+		self.controller_state = False
+		self.publish_controller_state()
 		if len(self.signal):
 			rospy.logwarn( "It's still sending data" )
 		else:
 			if self.state == ArDroneStates.Flying or self.state == ArDroneStates.Hovering: 
 				#self.control_off()
-				self.stop()
+				self._stop()
 				self.signal = SignalResponse( tf = signal_data.time, dt = signal_data.dt, f = signal_data.f, signal = signal_data.signal, direction = signal_data.direction ) 
 				self.timer['signal'] = rospy.Timer( rospy.Duration(self.signal.dt), self.cmd_signal, oneshot = False )
 				rospy.logwarn("Signal Started!")
@@ -222,16 +231,16 @@ class ArdroneCommander(Quadrotor, object):
 			self.timer['signal'].shutdown( )
 			self.signal = [ ]
 			rospy.logwarn("Signal Finished!")
-		except AttributeError:
+		except KeyError:
 			pass
 
-		self.stop()
+		self._stop()
 
 	def default_chirp_data(self, direction):
 		data = OpenLoopCommand()
-		data.time = 10
+		data.time = 20
 		data.dt = 0.01
-		data.f = 20
+		data.f = 0.5
 		data.signal = 'chirp'
 		data.direction = direction
 

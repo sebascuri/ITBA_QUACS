@@ -37,7 +37,7 @@ class SignalResponse(object):
 		return self.signal
 
 	def command(self):
-		return 0.5 * self.signal.pop(0)
+		return 0.1 * self.signal.pop(0)
 
 	def chirp(self):
 		return list( signal.chirp(t = self.t, f0 = 0.01, t1 = self.tf, f1 = self.f) )

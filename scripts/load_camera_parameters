@@ -1,0 +1,14 @@
+#!/bin/bash
+if [ $1 -eq 1 ]
+then
+	cp `rospack find ardrone_control`/parameters/ardrone1_bottom.yaml ~/.ros/camera_info/ardrone_bottom.yaml
+	cp `rospack find ardrone_control`/parameters/ardrone1_front.yaml ~/.ros/camera_info/ardrone_front.yaml
+	echo "ARDRONE 1"
+fi
+
+if [ $1 -eq 2 ]
+then
+	cp `rospack find ardrone_control`/parameters/ardrone2_bottom.yaml ~/.ros/camera_info/ardrone_bottom.yaml
+	cp `rospack find ardrone_control`/parameters/ardrone2_front.yaml ~/.ros/camera_info/ardrone_front.yaml
+	echo "ARDRONE 2"
+fi

@@ -13,7 +13,7 @@ from lib import Filter
 from lib import Sensors
 
 from ardrone_autonomy.msg import Navdata
-from sensor_msgs.msg import NavSatFix, Imu, Range, Image  
+from sensor_msgs.msg import NavSatFix, Imu, Range, Image
 from geometry_msgs.msg import Vector3Stamped
 from geometry_msgs.msg import Quaternion as QuaternionMsg
 
@@ -27,7 +27,8 @@ from ardrone_control.cfg import InitialConditionsConfig
 import tf
 
 import inspect
-
+import subprocess
+import math 
 
 COMMAND_TIME = 0.01
 
@@ -69,6 +70,8 @@ class StateEstimation(Quadrotor, object):
 			)
 
 		self.srv = Server(InitialConditionsConfig, self.restart )
+
+		self.calibrate_cameras( )
 	
 	def publish_estimation(self, time):
 		#publish estimated pose
@@ -131,18 +134,26 @@ class StateEstimation(Quadrotor, object):
 
 	def recieve_navdata(self, navdata):
 		dt = self.update_callback_time( inspect.stack()[0][3] )
-
+		self.set_state(navdata.state) #set state
 		# navdata = self.filter_navdata( navdata ) #filter navdata
 		#set linear velocity
-		self.velocity['x'] = navdata.vx / 1000.0 
-		self.velocity['y'] = navdata.vy / 1000.0 
-		self.velocity['z'] = navdata.vz / 1000.0  #ToDo Correct This
 
-		self.set_state(navdata.state) #set state
+		if self.state == ArDroneStates.Landed:
+			self.velocity['x'] = 0.0
+			self.velocity['y'] = 0.0
+			self.velocity['z'] = 0.0
+		else:
+			self.velocity['x'] = navdata.vx / 1000.0 
+			self.velocity['y'] = navdata.vy / 1000.0 
+			self.velocity['z'] = navdata.vz / 1000.0  #ToDo Correct This
+
+		
 		self.battery = navdata.batteryPercent #set battery % 
 		
 		#predict position update
 		self.position = self.filters['position'].predict( dt, self.position, self.velocity)
+
+		#self.position['yaw'] = navdata.rotZ * math.pi / 180.0 
 
 		self.position['z'] = navdata.altd / 1000.0
 
@@ -191,6 +202,14 @@ class StateEstimation(Quadrotor, object):
 			setattr( navdata, key, navdata_filter.get_output() )
 
 		return navdata 
+
+	def calibrate_cameras( self ):
+
+		cmd = ' $(rospack find ardrone_control)/scripts/load_camera_parameters {0}'.format( 
+			rospy.get_param('ardrone/version', 2)
+			)
+		subprocess.call(cmd, shell=True)
+
 
 	def restart( self, config, level ):
 		self.name = config.name 

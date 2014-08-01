@@ -43,8 +43,8 @@ class MplPlot(object):
 	"""docstring for MplPlot"""
 	def __init__(self ):
 		super(MplPlot, self).__init__()
-		self.x = deque( maxlen = 100 )
-		self.y = deque( maxlen = 100 )
+		self.x = deque( maxlen = 500 )
+		self.y = deque( maxlen = 500 )
 
 	def append( self , x, y):
 		self.x.append( x )
@@ -887,7 +887,7 @@ class MainWindow(QtGui.QMainWindow, object):
 
 		timer = QtCore.QTimer(self)
 		QtCore.QObject.connect(timer, QtCore.SIGNAL("timeout()"), self.update)
-		timer.start(100)
+		timer.start(500)
 
 		self.subscriber = dict( 
 			cmd_vel = rospy.Subscriber('cmd_vel', Twist, callback = self.recieveCmdVel),
@@ -1122,6 +1122,7 @@ class MainWindow(QtGui.QMainWindow, object):
 		self.actions['file']['record']['sensorfusion'] = QtGui.QAction( "Record &Estimation", self,checkable=True, triggered=partial(self.recordVar, "record_sensorfusion", 'sensorfusion'))
 		self.actions['file']['record']['trajectory'] = QtGui.QAction( "Record Commanded &Trajectory", self,checkable=True, triggered=partial(self.recordVar, "record_trajectory", 'trajectory'))
 		self.actions['file']['record']['recordAll'] = QtGui.QAction( "Record &All", self,checkable=True, triggered=self.recordAll)
+		self.actions['file']['record']['chirp'] = QtGui.QAction( "Record &Chirp", self,checkable=True, triggered=self.recordChirp)
 
 		for action in self.actions['file']['record'].values():
 			recordMenu.addAction( action )
@@ -1363,7 +1364,11 @@ class MainWindow(QtGui.QMainWindow, object):
 		direction = str(direction)
 		if ok:
 			self.commander.signal_init( self.commander.default_chirp_data(direction) )
-			self.plot.activePlots = [ 'Velocity {0}'.format(direction), 'Command Velocity {0}'.format(direction)] 
+			
+			if direction == 'z':
+				self.plot.activePlots = [ ( 'velocity' ,direction ) , ('position', direction)]	
+			else:
+				self.plot.activePlots = [ ( 'velocity' ,direction ) , ('cmdVel', direction)]		
 			self.plot.createPlotHandles()
 			self.unSelectRadioButtons('controlSource')
 
@@ -1434,6 +1439,36 @@ class MainWindow(QtGui.QMainWindow, object):
 					action.setChecked(False)
 					self.recordVar( 'record_{0}'.format(key), key )
 
+	def recordChirp( self ):
+		if self.actions['file']['record']['chirp'].isChecked():
+			self.actions['file']['record']['cmd_vel'].setChecked(True)
+			self.actions['file']['record']['navdata'].setChecked(True)
+
+			self.recordVar( 'record_cmd_vel', 'cmd_vel' )
+			self.recordVar( 'record_navdata', 'navdata' )
+
+		else:
+			self.actions['file']['record']['cmd_vel'].setChecked(False)
+			self.actions['file']['record']['navdata'].setChecked(False)
+
+			self.recordVar( 'record_cmd_vel', 'cmd_vel' )
+			self.recordVar( 'record_navdata', 'navdata' )
+
+
+		return 
+		"""
+		if self.actions['file']['record']['chirp'].isChecked():
+			for key, action in self.actions['file']['record'].items():
+				if key is not 'recordAll':
+					action.setChecked(True)
+					self.recordVar( 'record_{0}'.format(key), key )
+
+		else:
+			for key, action in self.actions['file']['chirp'].items():
+				if key is not 'recordAll':
+					action.setChecked(False)
+					self.recordVar( 'record_{0}'.format(key), key )
+		"""
 	def unSelectRadioButtons( self, group_name ):
 		self.radioButtons['groups'][group_name].setExclusive(False)
 		for button in self.radioButtons[group_name].values():
@@ -1580,6 +1615,9 @@ class MainWindow(QtGui.QMainWindow, object):
 		self.update_dict[ inspect.stack()[0][3] ] = False
 
 		self.parsePoseMsg( 'position', pose )
+
+		key = 'yaw'
+		self.infoLabel['position']['yaw'].setText("{0}: {1:.2f}".format( key, getattr(pose, key) * 180.0 / math.pi ) )
 
 	def recieveEstimatedVel( self, vel ):
 		if not self.update_dict[ inspect.stack()[0][3] ] :

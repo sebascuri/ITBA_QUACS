@@ -1,4 +1,5 @@
 <launch>
+<param name="ardrone/version" type="int" value="2" />
 
 <!-- rosrun gui -->
 <node name="ardrone_gui" pkg="ardrone_control" type="gui.py" respawn="false" output="screen" required="true" clear_params="true"/>
@@ -33,9 +34,9 @@
 	<param name="altitude_min" value="20" />
 
 	<!-- Tunes the maximum speed of the drone -->
-	<param name="control_vz_max" value="2000" />
-	<param name="control_yaw" value="6.11" />
-	<param name="euler_angle_max" value="0.35" />
+	<param name="control_vz_max" value="1000" />
+	<param name="control_yaw" value="1.00" />
+	<param name="euler_angle_max" value="0.2" />
 
 	<param name="do_imu_caliberation" value="true" />
 	<param name="tf_prefix" value="ardrone" />

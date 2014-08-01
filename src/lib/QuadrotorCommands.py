@@ -7,6 +7,9 @@ import rospy
 from geometry_msgs.msg import Twist
 from std_msgs.msg import Empty
 from ardrone_autonomy.srv import CamSelect, FlightAnim, LedAnim, RecordEnable 
+from geometry_msgs.msg import Vector3Stamped
+from sensor_msgs.msg import NavSatFix, Imu
+
 import std_srvs.srv
 
 class Commands(object):

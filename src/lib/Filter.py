@@ -29,9 +29,12 @@ class Digital(object):
 
 		self.output = deque( maxlen = kwargs.get('output_size', len(self.a)) )
 
+		self.periodic = kwargs.get('periodic', False)
+
 	def set_input(self, new_input):
 		self.input.append(new_input)
 		self.filter()
+		
 
 		return self.get_output()
 
@@ -43,6 +46,9 @@ class Digital(object):
 			for i in range(len(self.a)):
 				new_output -= self.a[i] * self.output[-1 - i]
 
+			if self.periodic:
+				new_output = math.atan2( math.sin(new_output), math.cos(new_output) )
+				
 			self.output.append(new_output)
 
 		except IndexError:
@@ -53,6 +59,12 @@ class Digital(object):
 			return self.output[-1]
 		except IndexError:
 			return 0
+
+	def get_output_index( self, n):
+		try:
+			return self.output[ n ]
+		except IndexError:
+			return 0 
 
 class SOSDigital(object):
 	"""docstring for SOSDigital"""

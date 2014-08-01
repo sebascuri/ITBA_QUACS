@@ -20,7 +20,7 @@ from ardrone_control.cfg import ControllerConfig
 
 
 import inspect
-
+import math 
 #from tf import TransformListener
 COMMAND_TIME = 0.01
 
@@ -124,6 +124,8 @@ class Controller(Quadrotor, object):
 		dt = self.update_callback_time( inspect.stack()[0][3] )
 		for key, siso_controller in self.controller.items():
 			siso_controller.input_measurement( getattr(pose, key), dt )
+			
+		self.position['yaw'] = getattr(pose, 'yaw')
 
 	def recieve_estimated_velocity( self, velocity ):
 		dt = self.update_callback_time( inspect.stack()[0][3] )
@@ -153,8 +155,23 @@ class Controller(Quadrotor, object):
 			if self.controller_state.position:
 				for key, siso_controller in self.controller.items():
 					velocity[key] = siso_controller.get_output()
+					if abs(velocity[key]) < 0.005:
+						velocity[key] = 0.00
+
+				yaw = self.position['yaw']
+				vx =  velocity['x'] * math.cos( yaw ) + velocity['y'] * math.sin( yaw )
+				vy =  - velocity['x'] * math.sin( yaw ) + velocity['y'] * math.cos( yaw )
+
+				velocity['x'] = vx
+				velocity['y'] = vy 
 			else:
 				velocity = self.velocity 
+
+			if abs(velocity['x']) > 0.1:
+				velocity['x'] = 0.1 if velocity['x']>0 else -0.1
+			if abs(velocity['y']) > 0.1:
+				velocity['y'] = 0.1 if velocity['y']>0 else -0.1
+
 			self.commander.velocity( velocity )
 
 
