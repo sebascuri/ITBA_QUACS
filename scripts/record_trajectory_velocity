@@ -1,0 +1,2 @@
+#!/bin/bash
+rostopic echo -p /ardrone/trajectory/velocity > `rospack find ardrone_control`/bagfiles/$(date +%Y-%m-%d-%H-%M-%S)_trajectory_velocity.csv

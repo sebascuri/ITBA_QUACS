@@ -19,9 +19,12 @@ class SignalResponse(object):
 
 		self.t = np.arange(self.t0, self.tf, self.dt)
 
+		self.K = kwargs.get('amplitude', 0.1)
+
 		self.signal = getattr(self, kwargs.get('signal', 'chirp') )()
 
 		self.direction = kwargs.get('direction', 'x')
+
 
 	def __str__(self):
 		return str(self.signal)
@@ -37,22 +40,22 @@ class SignalResponse(object):
 		return self.signal
 
 	def command(self):
-		return 0.1 * self.signal.pop(0)
+		return self.signal.pop(0)
 
 	def chirp(self):
-		return list( signal.chirp(t = self.t, f0 = 0.01, t1 = self.tf, f1 = self.f) )
+		return [ self.K * u for u in signal.chirp(t = self.t, f0 = 0.01, t1 = self.tf, f1 = self.f, phi=270) ]
 
 	def gausspulse(self):
-		return list( signal.gausspulse( t = self.t, fc = self.f) )
+		return [ self.K * u for u in signal.gausspulse( t = self.t, fc = self.f) ]
 
 	def sawtooth(self):
-		return list( signal.sawtooth( t = self.t, width = self.duty) ) 
+		return [ self.K * u for u in signal.sawtooth( t = self.t, width = self.duty) ] 
 
 	def square(self):
-		return list( signal.square( t = self.t , duty = self.duty ) )
+		return [ self.K * u for u in signal.square( t = self.t , duty = self.duty ) ]
 
 	def step(self):
-		return list( np.ones(np.size(self.t) ) )
+		return [ self.K * u for u in np.ones(np.size(self.t) ) ]
 
 def main():
 	print SignalResponse( tf = 10, dt = 0.1, f = 10, signal = 'gausspulse' )

@@ -31,45 +31,49 @@ class GPS(object):
 
 		self.zero = dict()
 		#self.set_enu()
-		self.calibrated_zero = False
-		self.calibrated_heading = False
+		self.calibrated = False
+
+		self.Covariance = kwargs.get('Covariance',  matlib.eye(3) )
 
 	def measure(self, fix_data):
 		self.latitude = fix_data.latitude
 		self.longitude = fix_data.longitude
 		self.altitude = fix_data.altitude
 
-		if not self.calibrated_zero:
-			self.calibrated_zero = True 
-			self.zero['latitude'] = self.latitude
-			self.zero['longitude'] = self.longitude
-			self.zero['altitude'] = self.altitude
-			easting, northing, number, letter = utm.from_latlon( self.latitude, self.longitude )
-			self.zero['easting'] = easting
-			self.zero['northing'] = northing
-
-
 		self.set_enu()
+
+		i = 0
+		for var in fix_data.position_covariance:
+			self.Covariance.itemset(i, var)
+			i += 1
+	
+	def calibrate( self, yaw = 0.0, x = 0.0, y = 0.0, z = 0.0 ):
+		self.zero['latitude'] = self.latitude
+		self.zero['longitude'] = self.longitude
+		self.zero['altitude'] = self.altitude
 		
-	def set_initial_heading(self, yaw):
-		self.zero['heading'] = yaw;
-		self.calibrated_heading = True
+		easting, northing, number, letter = utm.from_latlon( self.latitude, self.longitude )
+		self.zero['easting'] = easting
+		self.zero['northing'] = northing
+
+		self.zero['x'] = x
+		self.zero['y'] = y
+		self.zero['z'] = z
+		self.zero['yaw'] = yaw
+
+		self.calibrated = True  
 
 	def set_enu(self):
 		easting, northing, number, letter = utm.from_latlon( self.latitude, self.longitude )
 		self.easting = easting - self.zero['easting'] 
 		self.northing = northing - self.zero['northing'] 
 
-	def get_pose(self):
-		try:
-			heading = self.zero['heading']
-		except KeyError:
-			heading =  0.0
+	def get_vector(self):
 
-		x = self.easting * cos(heading) - self.northing * sin(heading)
-		y = self.easting * sin(heading) + self.northing * cos(heading)
-		z = self.altitude
-		return dict(x= x, y=y, z=z )
+		x = self.zero['x'] + self.easting * cos(self.zero['yaw']) - self.northing * sin(self.zero['yaw'])
+		y = self.zero['y'] + self.easting * sin(self.zero['yaw']) + self.northing * cos(self.zero['yaw'])
+		z = self.zero['z'] + self.altitude - self.zero['altitude']
+		return [x, y, z]
 
 class Magnetometer(object):
 	"""docstring for Magnetometer"""

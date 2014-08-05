@@ -24,15 +24,15 @@ class Digital(Filter.Digital, object):
 		self.error = kwargs.get('error', 0.0)
 		self.periodic = kwargs.get('periodic', False)
 	
-	def input_measurement( self, measurement, dt = None ):
+	def change_set_point_pose( self, new_set_point, dt = None ):
+		self.set_point = new_set_point	
+		
+	def input_pose( self, measurement, dt = None ):
 		self.error = self.set_point - measurement 
 		if self.periodic:
 			self.error = math.atan2( math.sin( self.error ), math.cos( self.error ))
 
-		return self.set_input( self.error )
-
-	def change_set_point( self, new_set_point, dt = None ):
-		self.set_point = new_set_point		
+		return self.set_input( self.error )	
 
 class ZPK(Filter.ZPK, object):
 	"""docstring for ZPK"""
@@ -49,15 +49,16 @@ class ZPK(Filter.ZPK, object):
 	def __str__(self):
 		return 'zeros {0}, poles {1}, gain {2}'.format(self.zeros, self.poles, self.gain)
 	
-	def input_measurement( self, measurement, dt = None ):
+	def change_set_point_pose( self, new_set_point ):
+		self.set_point = new_set_point	
+
+	def input_pose( self, measurement, dt = None ):
 		self.error = self.set_point - measurement 
 		if self.periodic:
 			self.error = math.atan2( math.sin( self.error ), math.cos( self.error ))
 
 		return self.set_input( self.error )
 
-	def change_set_point( self, new_set_point ):
-		self.set_point = new_set_point	
 		
 class TF(Filter.TF, object):
 	"""docstring for TF"""
@@ -71,24 +72,25 @@ class TF(Filter.TF, object):
 	def __str__(self):
 		return 'numerator = {0}, denominator = {1}'.format( self.num, self.den )
 
-	def input_measurement( self, measurement, dt = None ):
+	def change_set_point_pose( self, new_set_point, dt = None ):
+		self.set_point = new_set_point	
+
+	def input_pose( self, measurement, dt = None ):
 		self.error = self.set_point - measurement 
 		if self.periodic:
 			self.error = math.atan2( math.sin( self.error ), math.cos( self.error ))
 
 		return self.set_input( self.error )
-
-	def change_set_point( self, new_set_point, dt = None ):
-		self.set_point = new_set_point	
-		
+	
 class PID(object):
 	"""docstring for PID"""
 	def __init__(self, **kwargs):
 		super(PID, self).__init__()
 		self.set_point = dict(
-			proportional = kwargs.get('set_point', 0.0), 
-			derivative = 0.0
+			position = kwargs.get('set_point_position', 0.0), 
+			velocity = kwargs.get('set_point_velocity', 0.0),
 			)
+
 		self.periodic = kwargs.get('periodic', False)
 
 		self.parallel_errors = dict(
@@ -103,31 +105,32 @@ class PID(object):
 			)
 
 		self.saturation = False
-
-		self.measurement = 0.0
 	
 	def __str__(self):
 		return 'Kp = {0}, Kd = {1}, Ki = {2}'.format(self.gains['proportional'], self.gains['derivative'], self.gains['integral'] )
 		
-	def change_set_point( self, new_set_point, dt = None ):
-		if dt is not None:
-			self.set_point['derivative'] = ( new_set_point - self.set_point['proportional'] ) / dt
-		
-		self.set_point['proportional'] = new_set_point	
+	def change_set_point_pose( self, position_set_point ):
+		self.set_point['position'] = position_set_point
 
-	def input_measurement( self, measurement, dt ):
-		p_error = self.set_point['proportional'] - measurement 
-		d_error = self.set_point['derivative'] - (measurement - self.measurement)/dt 
-		self.measurement = measurement
+	def change_set_point_velocity( self, velocity_set_point ):
+		self.set_point['velocity'] = velocity_set_point
+
+	def input_pose( self, position, dt = 0.0):
+		self.parallel_errors['proportional'] = self.set_point['position'] - position 
 
 		if self.periodic:
-			p_error = math.atan2( math.sin( p_error ), math.cos( p_error ))
+			p_error = math.atan2( 
+				math.sin( self.parallel_errors['proportional'] ), 
+				math.cos( self.parallel_errors['proportional'] )
+				)
 
-		self.parallel_errors['proportional'] = p_error 
-		self.parallel_errors['derivative'] = d_error
 		if not self.saturation:
-			self.parallel_errors['integral'] += p_error * dt 
+			self.parallel_errors['integral'] += self.parallel_errors['proportional'] * dt 
 
+		return self.get_output()
+
+	def input_velocity( self, velocity ):
+		self.parallel_errors['derivative'] = self.set_point['velocity'] - velocity
 		return self.get_output()
 
 	def get_output(self):
@@ -140,48 +143,6 @@ class PID(object):
 	def reset(self):
 		for key in self.parallel_errors.keys():
 			self.parallel_errors[key] = 0.0
-
-class TrajectoryPID(PID, object):
-	"""docstring for TrajectoryPID"""
-	def __init__(self, **kwargs):
-		super(TrajectoryPID, self).__init__()
-		self.set_point = dict(
-			position = kwargs.get('set_point_position', 0.0), 
-			velocity = kwargs.get('set_point_velocity', 0.0),
-			)
-	
-	def change_set_point( self, *args, **kwargs ):
-		if len(args) == 1:
-			arg = args[0]
-			if type(arg) == dict:
-				self.change_set_point(**arg)
-			elif type(arg) == list or type(arg) == tuple:
-				self.change_set_point(arg[0], arg[1])
-			elif type(arg) == float:
-				self.set_point['position'] = arg
-			else: #np vector
-				self.change_set_point( arg.item(0), arg.item(1) ) 
-		elif len(args) == 2:
-			self.set_point['position'] = args[0]
-			self.set_point['velocity'] = args[1]
-
-
-		for key, value in kwargs.items():
-			self.set_point[key] = value 
-
-	def input_measurement( self, position_measurement, velocity_measurement, *dt ):
-		error = self.set_point['position'] - position_measurement 
-
-		if self.periodic:
-			error = math.atan2( math.sin( error ), math.cos( error ))
-		self.parallel_errors['proportional'] = error 
-		self.parallel_errors['derivative'] = self.set_point['velocity'] - velocity_measurement
-		
-		if not self.saturation:
-			self.parallel_errors['integral'] += error * dt[0]
-
-		return self.get_output()
-
 
 def main():
 

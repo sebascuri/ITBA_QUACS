@@ -14,7 +14,7 @@ from ardrone_control.srv import OpenLoopCommand
 from ardrone_control.msg import QuadrotorPose
 from ardrone_autonomy.msg import Navdata 
 from geometry_msgs.msg import Twist
-from geometry_msgs.msg import Quaternion as QuaternionMsg
+from geometry_msgs.msg import QuaternionStamped as QuaternionMsg
 
 from sensor_msgs.msg import CompressedImage, Image 
 from nav_msgs.msg import Odometry
@@ -209,7 +209,8 @@ class CameraCanvas(QtGui.QLabel):
 			)
 		
 	def updateCamera(self):
-		self.setPixmap( self.pixmap.scaled( self.width(), self.height(), QtCore.Qt.KeepAspectRatioByExpanding) )
+		pass
+		#self.setPixmap( self.pixmap.scaled( self.width(), self.height(), QtCore.Qt.KeepAspectRatioByExpanding) )
 		# QtCore.Qt.FastTransformation
 
 class ControllerSetupWizard(QtGui.QWizard):
@@ -269,7 +270,7 @@ class ControllerSetupWizard(QtGui.QWizard):
 		self.pages['controllerType'].setTitle("Controller Type")
 
 		comboType = QtGui.QComboBox(self); 
-		comboType.addItems( [ "PID", "TrajectoryPID", "Zero-Pole Gain", "Transfer Function"] ); 
+		comboType.addItems( [ "PID", "Zero-Pole Gain", "Transfer Function"] ); 
 		comboType.activated[str].connect( self.onControllerSelect )
 
 		comboDir = QtGui.QComboBox(self); 
@@ -625,6 +626,58 @@ class ArduinoSetupDialog(QtGui.QDialog):
 	def getData( self ):
 		return int( self.baudList[ self.values['baud'].currentIndex() ]), str(self.values['port'].text().simplified()), self.ok 
 
+
+class XbeeSetupDialog(QtGui.QDialog):
+	"""docstring for SignalSetupDialog"""
+	def __init__(self):
+		super(XbeeSetupDialog, self).__init__()
+		self.ok = False
+		self.baudList = [110, 300, 600, 1200, 2400, 4800, 9600, 14400, 19200, 28800, 38400, 56000, 57600, 115200, 
+		128000, 153600, 230400, 256000, 460800, 921600 ]
+
+		input_list = ['baud', 'port']
+		self.labels = dict()
+		self.values = dict()
+
+		self.labels['baud'] = QtGui.QLabel("Baud Rate")
+		self.values['baud'] = QtGui.QComboBox(); self.values['baud'].addItems([ str(a) for a in self.baudList ])
+		self.values['baud'].setCurrentIndex( self.baudList.index(4800) )
+
+		self.labels['port'] = QtGui.QLabel("Select Port ")
+		self.values['port'] = QtGui.QLineEdit("/dev/ttyUSB0")
+
+		self.button = QtGui.QDialogButtonBox( 
+			QtGui.QDialogButtonBox.Ok|QtGui.QDialogButtonBox.Cancel, 
+			QtCore.Qt.Horizontal )
+
+		self.connect( self.button.button( QtGui.QDialogButtonBox.Ok ), QtCore.SIGNAL('clicked()'), self.onOk )
+		self.connect( self.button.button( QtGui.QDialogButtonBox.Cancel ), QtCore.SIGNAL('clicked()'), self.onCancel )
+		self.connect(self.button, QtCore.SIGNAL("rejected()"), self, QtCore.SLOT("reject()"))
+		self.connect(self.button, QtCore.SIGNAL("accepted()"), self, QtCore.SLOT("accept()"))
+
+		layout = QtGui.QGridLayout()
+		i = 0
+		for input_ in input_list:
+			layout.addWidget(self.labels[input_], i, 0)
+			layout.addWidget(self.values[input_], i, 1)
+			i+=1
+
+		layout.addWidget(self.button, 3, 0)
+		self.setLayout(layout)
+
+		self.setWindowTitle("Open Loop Signals Dialog")
+		self.show()
+		self.exec_()
+
+	def onOk( self ):
+		self.ok = True
+
+	def onCancel( self ):
+		self.ok = False
+
+	def getData( self ):
+		return int( self.baudList[ self.values['baud'].currentIndex() ]), str(self.values['port'].text().simplified()), self.ok 
+
 class InitialConditionDialog(QtGui.QDialog):
 	"""docstring for InitialConditionDialog"""
 	def __init__(self):
@@ -712,6 +765,8 @@ class InitialConditionDialog(QtGui.QDialog):
 			layout.addWidget( self.sensors[sensor] )
 		self.sensors['Accelerometer'].setCheckState(QtCore.Qt.Checked)
 		self.sensors['Gyroscope'].setCheckState(QtCore.Qt.Checked)
+		self.sensors['Magnetometer'].setCheckState(QtCore.Qt.Checked)
+		self.sensors['GPS'].setCheckState(QtCore.Qt.Checked)
 
 		widget.setLayout(layout)
 		return widget
@@ -861,7 +916,7 @@ class MainWindow(QtGui.QMainWindow, object):
 		self.radioButtons = dict()
 		self.comboBox = dict()
 
-		self.infoLabel = dict()
+		self.infoLabel = OrderedDict()
 
 		self.actions = dict()
 		self.menus = dict()
@@ -894,11 +949,13 @@ class MainWindow(QtGui.QMainWindow, object):
 			#state = rospy.Subscriber('ardrone/estimated_pose', Odometry, callback = self.recieveStateEstimation), 
 			estimated_pose = rospy.Subscriber('ardrone/sensor_fusion/pose', QuadrotorPose, callback = self.recieveEstimatedPose),
 			estimated_velocity = rospy.Subscriber('ardrone/sensor_fusion/velocity', QuadrotorPose, callback = self.recieveEstimatedVel),
-			estimated_quaternion = rospy.Subscriber('ardrone/sensor_fusion/estimated_quaternion', QuaternionMsg, callback = self.recieveEstimatedQuaternion),
+			estimated_quaternion = rospy.Subscriber('ardrone/sensor_fusion/quaternion', QuaternionMsg, callback = self.recieveEstimatedQuaternion),
 			desired_pose = rospy.Subscriber('ardrone/trajectory/pose', QuadrotorPose, callback = self.recieveDesiredPose),
 			desired_velocity = rospy.Subscriber('ardrone/trajectory/velocity', QuadrotorPose, callback = self.recieveDesiredVel),
 			commanded_velocity = rospy.Subscriber('cmd_vel', Twist, callback=self.recieveCmdVel)
 			)
+
+		self.setWindowState(QtCore.Qt.WindowMaximized)
 	
 	def initMainLayout( self ):
 		mainWidget = QtGui.QWidget( self )
@@ -943,17 +1000,17 @@ class MainWindow(QtGui.QMainWindow, object):
 		#QtCore.QObject.connect(timer, QtCore.SIGNAL("timeout()"), self.update_state)
 		#timer.start(1000)
 
-		layout = dict( )
+		layout = OrderedDict( )
 
-		self.groupBoxList = ['generalInfo', 'position', 'velocity', 'setPoint', 'cmdVel' ]
+		#self.groupBoxList = ['generalInfo', 'position', 'velocity', 'setPoint', 'cmdVel' ]
 		
 		self.groupBox['generalInfo'] = QtGui.QGroupBox("General Info")
 		layout['generalInfo'] = QtGui.QHBoxLayout()
-		self.infoLabel['generalInfo'] = dict()
+		self.infoLabel['generalInfo'] = OrderedDict()
 		self.infoLabel['generalInfo']['batteryPercent'] = QtGui.QLabel( "Battery Percent: ")
 		#self.infoLabel['generalInfo']['controller'] = QtGui.QLabel( "Controller Type: ")
 
-		self.radioButtons['controllerType'] = dict()
+		self.radioButtons['controllerType'] = OrderedDict()
 		self.radioButtons['controllerType']['openLoop'] = QtGui.QRadioButton("Velocity Control", self.groupBox['generalInfo'], clicked=self.onControllerSelect)
 		self.radioButtons['controllerType']['openLoop'].setChecked(False)
 		self.radioButtons['controllerType']['closedLoop'] = QtGui.QRadioButton("Position Control", self.groupBox['generalInfo'], clicked=self.onControllerSelect)
@@ -967,7 +1024,7 @@ class MainWindow(QtGui.QMainWindow, object):
 		self.groupBox['velocity'] = QtGui.QGroupBox("Speed")
 		layout['velocity'] = QtGui.QHBoxLayout()
 
-		self.infoLabel['velocity'] = dict()
+		self.infoLabel['velocity'] = OrderedDict()
 		self.infoLabel['velocity']['x'] = QtGui.QLabel( "x: ")
 		self.infoLabel['velocity']['y'] = QtGui.QLabel( "y: ")
 		self.infoLabel['velocity']['z'] = QtGui.QLabel( "z: ")
@@ -976,7 +1033,7 @@ class MainWindow(QtGui.QMainWindow, object):
 
 		self.groupBox['position'] = QtGui.QGroupBox("Position")
 		layout['position'] = QtGui.QHBoxLayout()
-		self.infoLabel['position'] = dict()
+		self.infoLabel['position'] = OrderedDict()
 		self.infoLabel['position']['x'] = QtGui.QLabel( "x: ")
 		self.infoLabel['position']['y'] = QtGui.QLabel( "y: ")
 		self.infoLabel['position']['z'] = QtGui.QLabel( "z: ")
@@ -985,7 +1042,7 @@ class MainWindow(QtGui.QMainWindow, object):
 
 		self.groupBox['setPoint'] = QtGui.QGroupBox("Set Point")
 		layout['setPoint'] = QtGui.QHBoxLayout()
-		self.infoLabel['setPoint'] = dict()
+		self.infoLabel['setPoint'] = OrderedDict()
 		self.infoLabel['setPoint']['x'] = QtGui.QLabel( "x: ")
 		self.infoLabel['setPoint']['y'] = QtGui.QLabel( "y: ")
 		self.infoLabel['setPoint']['z'] = QtGui.QLabel( "z: ")
@@ -994,20 +1051,19 @@ class MainWindow(QtGui.QMainWindow, object):
 		self.groupBox['cmdVel'] = QtGui.QGroupBox("Commanded Velocity")
 		layout['cmdVel'] = QtGui.QHBoxLayout()
 
-		self.infoLabel['cmdVel'] = dict()
+		self.infoLabel['cmdVel'] = OrderedDict()
 		self.infoLabel['cmdVel']['x'] = QtGui.QLabel("x: {0:.2f}".format( self.commander.velocity['x'] ) )
 		self.infoLabel['cmdVel']['y'] = QtGui.QLabel("y: {0:.2f}".format( self.commander.velocity['y'] ) )
 		self.infoLabel['cmdVel']['z'] = QtGui.QLabel("z: {0:.2f}".format( self.commander.velocity['z'] ) )
 		self.infoLabel['cmdVel']['yaw'] = QtGui.QLabel("yaw: {0:.2f}".format( self.commander.velocity['yaw'] ) )
 
 
-		for group in self.groupBoxList:
-			for variable in self.variableList:# + self.infoLabel['generalInfo'].keys():
-				try:
-					layout[group].addWidget( self.infoLabel[group][variable] )
-				except KeyError:
-					pass
+		for group, dictionaries in self.infoLabel.items():
+			for label in dictionaries.values():
+				layout[group].addWidget( label )
+
 			self.groupBox[group].setLayout( layout[group] )
+
 			self.layouts['stateDisplay'].addWidget( self.groupBox[group] )
 
 		#self.updateSetPoint()
@@ -1017,11 +1073,13 @@ class MainWindow(QtGui.QMainWindow, object):
 		layout = QtGui.QVBoxLayout()
 
 		
-		self.pushButtons['directCommand'] = dict()
+		self.pushButtons['directCommand'] = OrderedDict()
 		self.pushButtons['directCommand']['land'] = QtGui.QPushButton("Land", self, clicked=self.commander.land)
 		self.pushButtons['directCommand']['takeOff']  = QtGui.QPushButton("Take Off", self, clicked=self.commander.take_off)	
 		self.pushButtons['directCommand']['reset']  = QtGui.QPushButton("Reset", self, clicked=self.commander.reset) 	
 		self.pushButtons['directCommand']['stop']  = QtGui.QPushButton("Stop", self, clicked=self.commander.stop) 	
+
+		self.pushButtons['directCommand']['land'].setMinimumHeight(60);
 
 		for button in self.pushButtons['directCommand'].values():
 			layout.addWidget( button )
@@ -1032,7 +1090,7 @@ class MainWindow(QtGui.QMainWindow, object):
 		layout = QtGui.QGridLayout()
 
 
-		self.radioButtons['groups'] = dict()
+		self.radioButtons['groups'] = OrderedDict()
 		self.radioButtons['groups']['controlSource'] = QtGui.QButtonGroup()
 		
 		self.radioButtons['controlSource'] = dict()
@@ -1111,25 +1169,33 @@ class MainWindow(QtGui.QMainWindow, object):
 
 		recordMenu = self.menus['file'].addMenu( "&Record" )
 
-		self.actions['file']['record'] = dict()
+		self.actions['file']['record'] = OrderedDict()
 		self.actions['file']['record']['navdata'] = QtGui.QAction( "Record &Navdata", self,checkable=True, triggered=partial(self.recordVar, "record_navdata", 'navdata' ))
 		self.actions['file']['record']['cmd_vel'] = QtGui.QAction( "Record Command &Velocity", self,checkable=True, triggered=partial(self.recordVar, "record_cmd_vel", 'cmd_vel' ))
 		self.actions['file']['record']['imu'] = QtGui.QAction( "Record &Imu", self,checkable=True, triggered=partial(self.recordVar, "record_imu", 'imu' )) 
-		self.actions['file']['record']['image'] = QtGui.QAction( "Record &Image", self,checkable=True, triggered=partial(self.recordVar, "record_image", 'image'))
-		self.actions['file']['record']['sonar'] = QtGui.QAction( "Record &Sonar", self,checkable=True, triggered=partial(self.recordVar, "record_sonar", 'sonar'))
+		#self.actions['file']['record']['image'] = QtGui.QAction( "Record &Image", self,checkable=True, triggered=partial(self.recordVar, "record_image", 'image'))
+		#self.actions['file']['record']['sonar'] = QtGui.QAction( "Record &Sonar", self,checkable=True, triggered=partial(self.recordVar, "record_sonar", 'sonar'))
 		self.actions['file']['record']['mag'] = QtGui.QAction( "Record &Magnetometer", self,checkable=True, triggered=partial(self.recordVar, "record_mag", 'mag'))
 		self.actions['file']['record']['gps'] = QtGui.QAction( "Record &GPS", self,checkable=True, triggered=partial(self.recordVar, "record_gps", 'gps'))
-		self.actions['file']['record']['sensorfusion'] = QtGui.QAction( "Record &Estimation", self,checkable=True, triggered=partial(self.recordVar, "record_sensorfusion", 'sensorfusion'))
-		self.actions['file']['record']['trajectory'] = QtGui.QAction( "Record Commanded &Trajectory", self,checkable=True, triggered=partial(self.recordVar, "record_trajectory", 'trajectory'))
+		
+		self.actions['file']['record']['sensor_fusion_pose'] = QtGui.QAction( "Record Sensor Fusion &Pose", self,checkable=True, triggered=partial(self.recordVar, "record_sensor_fusion_pose", 'sensor_fusion_pose' ))
+		self.actions['file']['record']['sensor_fusion_velocity'] = QtGui.QAction( "Record Sensor Fusion &Velocity", self,checkable=True, triggered=partial(self.recordVar, "record_sensor_fusion_velocity", 'sensor_fusion_velocity' ))
+		self.actions['file']['record']['sensor_fusion_quaternion'] = QtGui.QAction( "Record Sensor Fusion &Quaternion", self,checkable=True, triggered=partial(self.recordVar, "record_sensor_fusion_quaternion", 'sensor_fusion_quaternion' ))
+
+		self.actions['file']['record']['trajectory_pose'] = QtGui.QAction( "Record Desired &Pose", self,checkable=True, triggered=partial(self.recordVar, "record_trajectory_pose", 'trajectory_pose' ))
+		self.actions['file']['record']['trajectory_velocity'] = QtGui.QAction( "Record Desired &Velocity", self,checkable=True, triggered=partial(self.recordVar, "record_trajectory_velocity", 'trajectory_velocity' ))
+		
+		#self.actions['file']['record']['sensorfusion'] = QtGui.QAction( "Record &Estimation", self,checkable=True, triggered=partial(self.recordVar, "record_sensorfusion", 'sensorfusion'))
+		#self.actions['file']['record']['trajectory'] = QtGui.QAction( "Record Commanded &Trajectory", self,checkable=True, triggered=partial(self.recordVar, "record_trajectory", 'trajectory'))
+		
 		self.actions['file']['record']['recordAll'] = QtGui.QAction( "Record &All", self,checkable=True, triggered=self.recordAll)
-		self.actions['file']['record']['chirp'] = QtGui.QAction( "Record &Chirp", self,checkable=True, triggered=self.recordChirp)
 
 		for action in self.actions['file']['record'].values():
 			recordMenu.addAction( action )
 
 
 		self.menus['setUp'] = menubar.addMenu('&Set Up')
-		self.actions['setUp'] = dict()
+		self.actions['setUp'] = OrderedDict()
 
 		self.actions['setUp']['initialCondition'] = QtGui.QAction( "Setup &Inditial Conditions", self, triggered = self.selectInitialConditions)
 		self.actions['setUp']['initialCondition'].setShortcut('Ctrl+I')
@@ -1143,10 +1209,11 @@ class MainWindow(QtGui.QMainWindow, object):
 
 		
 		self.menus['calibration'] = menubar.addMenu('&Calibration')
-		self.actions['calibration'] = dict()
+		self.actions['calibration'] = OrderedDict()
 
 		self.actions['calibration']['flatTrim'] = QtGui.QAction( "&Flat Trim", self, triggered=self.commander.flat_trim )
 		self.actions['calibration']['imuRecal'] = QtGui.QAction( "&Imu Re-Calibration", self, triggered=self.onImuCalibration )
+		self.actions['calibration']['gps'] = QtGui.QAction( "&GPS Calibrate", self, triggered=self.commander.calibrate_gps )
 
 
 		self.menus['animation'] = menubar.addMenu('&Animations')
@@ -1161,16 +1228,32 @@ class MainWindow(QtGui.QMainWindow, object):
 		#self.actions['controller']['controlType'] = QtGui.QAction( "&Control Type", self, triggered=self.selectControlType )
 		"""
 		self.menus['command'] = menubar.addMenu('Command')
-		self.actions['command'] = dict()
+		self.actions['command'] = OrderedDict()
 		
 		self.actions['command']['chirp'] = QtGui.QAction( "&Default Chirp", self, triggered=self.selectChirp )
 		self.actions['command']['openLoopSignals'] = QtGui.QAction( "&Open Loop Command", self, triggered=self.selectSignal )
 
-		self.menus['arduino'] = menubar.addMenu('Arduino')
-		self.actions['arduino'] = OrderedDict()
-		self.actions['arduino']['1 start'] = QtGui.QAction( "&Start Arduino Connection", self, triggered=partial(self.onArduino,'start') )
-		self.actions['arduino']['2 reset'] = QtGui.QAction( "&Reset Arduino Connection", self, triggered=partial(self.onArduino,'reset') )
-		self.actions['arduino']['3 close'] = QtGui.QAction( "&Stop Arduino Connection", self, triggered=partial(self.onArduino,'close') )
+		self.menus['serial'] = menubar.addMenu('Serial')
+		self.actions['serial']= OrderedDict()
+		
+		arduinoMenu = self.menus['serial'].addMenu( "&Arduino" )
+		self.actions['serial']['arduino'] = OrderedDict()
+		self.actions['serial']['arduino']['start'] = QtGui.QAction( "&Start Arduino Connection", self, triggered=partial(self.onArduino,'start') )
+		self.actions['serial']['arduino']['reset'] = QtGui.QAction( "&Reset Arduino Connection", self, triggered=partial(self.onArduino,'reset') )
+		self.actions['serial']['arduino']['close'] = QtGui.QAction( "&Stop Arduino Connection", self, triggered=partial(self.onArduino,'close') )
+
+		for action in self.actions['serial']['arduino'].values():
+			arduinoMenu.addAction( action )
+
+		xbeeMenu = self.menus['serial'].addMenu( "&X-Bee" )
+		self.actions['serial']['xbee'] = OrderedDict()
+		self.actions['serial']['xbee']['start'] = QtGui.QAction( "&Start X-Bee Connection", self, triggered=partial(self.onXbee,'start') )
+		self.actions['serial']['xbee']['reset'] = QtGui.QAction( "&Reset X-Bee Connection", self, triggered=partial(self.onXbee,'reset') )
+		self.actions['serial']['xbee']['close'] = QtGui.QAction( "&Stop X-Bee Connection", self, triggered=partial(self.onXbee,'close') )
+
+		for action in self.actions['serial']['xbee'].values():
+			xbeeMenu.addAction( action )
+
 
 		for menu in self.actions.keys():
 			for action in self.actions[menu].values():
@@ -1207,8 +1290,28 @@ class MainWindow(QtGui.QMainWindow, object):
 
 		elif action == 'stop':
 			self.rosLauncher.kill_node('rosserial')
-			self.rosLauncher.kell_node('arduino_translator')
+			self.rosLauncher.kill_node('arduino_translator')
 	
+	def onXbee( self, action, clicked):
+		if action == 'start':
+			baud, port, ok  = XbeeSetupDialog().getData( )
+			if ok:
+				self.rosLauncher.set_param( 'arduino','boaud', baud)
+				self.rosLauncher.set_param( 'arduino','port', baud)
+
+				node = self.rosLauncher.init_node( "ardrone_control", "gps_reciever.py",'gps_reciever' )
+				self.rosLauncher.launch_node( node, 'gps_reciever' )
+
+			else:
+				return 
+
+		elif action == 'reset':
+			self.onXbee( self, 'close' )
+			self.onXbee( self, 'start' )
+
+		elif action == 'stop':
+			self.rosLauncher.kill_node('gps_reciever')
+
 	def onCameraSelect( self ):
 		if self.radioButtons['cameraSelect']['frontCamera'].isChecked():
 			self.commander.cam_select(0)
@@ -1256,10 +1359,10 @@ class MainWindow(QtGui.QMainWindow, object):
 			if ok:
 				if set_point_type == 'Position':
 					for key, value in sp.items():
-						getattr( self.commander, key )(value)
+						self.commander.position[key] = value 
 				else:
 					for key, value in sp.items():
-						getattr( self.commander, 'v'+key)(value)
+						self.commander.velocity[key] = value 
 
 			self.unSelectRadioButtons('controlSource')
 		elif self.radioButtons['controlSource']['keyboard'].isChecked():
@@ -1272,8 +1375,6 @@ class MainWindow(QtGui.QMainWindow, object):
 			self.commander.control_on()
 
 	def onImuCalibration( self ):
-		self.onImuCalibration
-
 		msgBox = QtGui.QMessageBox(QtGui.QMessageBox.Warning, "Warning", "Caution, experimental!", QtGui.QMessageBox.NoButton, self)
 		msgBox.addButton("Continue Anyways", QtGui.QMessageBox.AcceptRole)
 		msgBox.addButton("Don't Calibration", QtGui.QMessageBox.RejectRole)
@@ -1438,37 +1539,7 @@ class MainWindow(QtGui.QMainWindow, object):
 				if key is not 'recordAll':
 					action.setChecked(False)
 					self.recordVar( 'record_{0}'.format(key), key )
-
-	def recordChirp( self ):
-		if self.actions['file']['record']['chirp'].isChecked():
-			self.actions['file']['record']['cmd_vel'].setChecked(True)
-			self.actions['file']['record']['navdata'].setChecked(True)
-
-			self.recordVar( 'record_cmd_vel', 'cmd_vel' )
-			self.recordVar( 'record_navdata', 'navdata' )
-
-		else:
-			self.actions['file']['record']['cmd_vel'].setChecked(False)
-			self.actions['file']['record']['navdata'].setChecked(False)
-
-			self.recordVar( 'record_cmd_vel', 'cmd_vel' )
-			self.recordVar( 'record_navdata', 'navdata' )
-
-
-		return 
-		"""
-		if self.actions['file']['record']['chirp'].isChecked():
-			for key, action in self.actions['file']['record'].items():
-				if key is not 'recordAll':
-					action.setChecked(True)
-					self.recordVar( 'record_{0}'.format(key), key )
-
-		else:
-			for key, action in self.actions['file']['chirp'].items():
-				if key is not 'recordAll':
-					action.setChecked(False)
-					self.recordVar( 'record_{0}'.format(key), key )
-		"""
+	
 	def unSelectRadioButtons( self, group_name ):
 		self.radioButtons['groups'][group_name].setExclusive(False)
 		for button in self.radioButtons[group_name].values():
@@ -1501,27 +1572,14 @@ class MainWindow(QtGui.QMainWindow, object):
 		if event.isAutoRepeat():
 			return
 
+		if key == QtCore.Qt.Key_Backspace:
+			self.commander.stop()
+		elif key == QtCore.Qt.Key_Escape:
+			self.commander.land()
+
 		if self.radioButtons['controlSource']['keyboard'].isChecked():
-			if key == QtCore.Qt.Key_A:
-				self.commander.yaw( -1 )
-			elif key == QtCore.Qt.Key_D:
-				self.commander.yaw( +1 )
-			elif key == QtCore.Qt.Key_S:
-				self.commander.z( -1 )
-			elif key == QtCore.Qt.Key_W:
-				self.commander.z( +1 )
-			elif key == QtCore.Qt.Key_I:
-				self.commander.x( +1 )
-			elif key == QtCore.Qt.Key_K:
-				self.commander.x( -1 )
-			elif key == QtCore.Qt.Key_L:
-				self.commander.y( +1 )
-			elif key == QtCore.Qt.Key_J:
-				self.commander.y( -1 )
-			elif key == QtCore.Qt.Key_Return:
+			if key == QtCore.Qt.Key_Return:
 				self.commander.take_off()
-			elif key == QtCore.Qt.Key_Backspace:
-				self.commander.land()
 			elif key == QtCore.Qt.Key_Space:
 				self.commander.reset()
 			elif key == QtCore.Qt.Key_C:
@@ -1529,19 +1587,59 @@ class MainWindow(QtGui.QMainWindow, object):
 			elif key == QtCore.Qt.Key_F:
 				self.commander.control_off()
 
+
+			## Velocity Commands
+			if key == QtCore.Qt.Key_A:
+				self.commander.vyaw( -1 )
+			elif key == QtCore.Qt.Key_D:
+				self.commander.vyaw( +1 )
+			elif key == QtCore.Qt.Key_S:
+				self.commander.vz( -1 )
+			elif key == QtCore.Qt.Key_W:
+				self.commander.vz( +1)
+			elif key == QtCore.Qt.Key_I:
+				self.commander.vx( +1 )
+			elif key == QtCore.Qt.Key_K:
+				self.commander.vx( -1 )
+			elif key == QtCore.Qt.Key_L:
+				self.commander.vy( +1 )
+			elif key == QtCore.Qt.Key_J:
+				self.commander.vy( -1 )
+
+			## Position Commands
+			modifiers = QtGui.QApplication.keyboardModifiers()
+			if modifiers == QtCore.Qt.ShiftModifier:
+				if key == QtCore.Qt.Key_Left:
+					self.commander.yaw( -1 )
+				elif key == QtCore.Qt.Key_Right:
+					self.commander.yaw( +1 )
+				elif key == QtCore.Qt.Key_Down:
+					self.commander.z( -1 )
+				elif key == QtCore.Qt.Key_Up:
+					self.commander.z( +1 )
+			else:
+				if key == QtCore.Qt.Key_Left:
+					self.commander.y( -1 )
+				elif key == QtCore.Qt.Key_Right:
+					self.commander.y( +1 )
+				elif key == QtCore.Qt.Key_Down:
+					self.commander.x( -1 )
+				elif key == QtCore.Qt.Key_Up:
+					self.commander.x( +1 )
+
 	def keyReleaseEvent(self, event):
 		key = event.key()
 		if event.isAutoRepeat():
 			return
 		if self.radioButtons['controlSource']['keyboard'].isChecked():
 			if key == QtCore.Qt.Key_A or key == QtCore.Qt.Key_D:
-				self.commander.yaw( 0 )
+				self.commander.vyaw( 0 )
 			elif key == QtCore.Qt.Key_S or key == QtCore.Qt.Key_W:
-				self.commander.z( 0 )
+				self.commander.vz( 0 )
 			elif key == QtCore.Qt.Key_I or key == QtCore.Qt.Key_K:
-				self.commander.x( 0 )
+				self.commander.vx( 0 )
 			elif key == QtCore.Qt.Key_L or key == QtCore.Qt.Key_J:
-				self.commander.y( 0 )
+				self.commander.vy( 0 )
 
 	def wayPointStart(self, wayPoinOobject):
 		self.wayPoint = wayPoinOobject
@@ -1641,7 +1739,7 @@ class MainWindow(QtGui.QMainWindow, object):
 	def recieveEstimatedQuaternion(self, quaternion_msg):
 		t = rospy.get_time() - self.timeZero
 		for key, plot in self.plot.plots['quaternion'].items():
-			plot.append(t, getattr(quaternion_msg, key))
+			plot.append(t, getattr(quaternion_msg.quaternion, key))
 
 	def parsePoseMsg(self, attribute, pose_msg):
 		t = rospy.get_time() - self.timeZero

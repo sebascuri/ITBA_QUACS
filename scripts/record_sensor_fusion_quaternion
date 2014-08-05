@@ -1,0 +1,2 @@
+#!/bin/bash
+rostopic echo -p /ardrone/sensor_fusion/quaternion > `rospack find ardrone_control`/bagfiles/$(date +%Y-%m-%d-%H-%M-%S)_sensor_fusion_quaternion.csv

@@ -15,7 +15,9 @@ from lib import Sensors
 from ardrone_autonomy.msg import Navdata
 from sensor_msgs.msg import NavSatFix, Imu, Range, Image
 from geometry_msgs.msg import Vector3Stamped
-from geometry_msgs.msg import Quaternion as QuaternionMsg
+from geometry_msgs.msg import QuaternionStamped as QuaternionMsg
+
+from std_srvs.srv import Empty
 
 from nav_msgs.msg import Odometry
 from ardrone_control.msg import QuadrotorPose
@@ -52,7 +54,11 @@ class StateEstimation(Quadrotor, object):
 		self.publisher = dict( 
 			estimated_pose = rospy.Publisher('ardrone/sensor_fusion/pose', QuadrotorPose),
 			estimated_velocity = rospy.Publisher('ardrone/sensor_fusion/velocity', QuadrotorPose),
-			estimated_quaternion = rospy.Publisher('ardrone/sensor_fusion/estimated_quaternion', QuaternionMsg),
+			estimated_quaternion = rospy.Publisher('ardrone/sensor_fusion/quaternion', QuaternionMsg),
+			)
+
+		self.service = dict(
+			gps = rospy.Service('ardrone/calibrate_gps', Empty, self.calibrate_gps)
 			)
 
 		self.tf_broadcaster = dict( local = tf.TransformBroadcaster( ) )
@@ -60,6 +66,7 @@ class StateEstimation(Quadrotor, object):
 		self.timer = dict( publish_timer = rospy.Timer(rospy.Duration( COMMAND_TIME ), self.publish_estimation, oneshot=False) )
 
 		now_time = rospy.get_time()
+		
 		self.callback_time = dict(
 			recieve_navdata = now_time, 
 			recieve_gps = now_time,
@@ -80,8 +87,8 @@ class StateEstimation(Quadrotor, object):
 		
 		msg = QuaternionMsg()
 		for key, value in self.orientation:
-			setattr(msg, key, value)
-
+			setattr(msg.quaternion, key, value)
+		msg.header.stamp = rospy.Time.now()
 		self.publisher['estimated_quaternion'].publish(msg)
 
 		"""
@@ -123,7 +130,7 @@ class StateEstimation(Quadrotor, object):
 		msg = QuadrotorPose()
 		for key, value in attribute.items():
 			setattr(msg, key, value)
-
+		msg.header.stamp = rospy.Time.now()
 		return msg 
 
 	def update_callback_time( self, callback_name ):
@@ -158,7 +165,6 @@ class StateEstimation(Quadrotor, object):
 		self.position['z'] = navdata.altd / 1000.0
 
 	def recieve_gps(self, gpsdata):
-		pass
 		dt = self.update_callback_time( inspect.stack[0][3] )
 
 		self.sensors['gps'].measure( gpsdata )
@@ -188,12 +194,10 @@ class StateEstimation(Quadrotor, object):
 
 	def recieve_sonar(self, range_data):
 		""" Receive Sonar Heigh proximity msgs"""
-		pass
 		dt = self.update_callback_time( inspect.stack()[0][3] )
 		self.sensors['range'].measure( range_data )
 		
 	def recieve_bottom_camera(self, image_raw):
-		pass
 		dt = self.update_callback_time( inspect.stack()[0][3] )
 		
 	def filter_navdata( self, navdata ):
@@ -210,6 +214,9 @@ class StateEstimation(Quadrotor, object):
 			)
 		subprocess.call(cmd, shell=True)
 
+	def calibrate_gps( self, empty):
+		self.sensors['gps'].calibrate( self.position['yaw'], self.position['x'], self.position['y'], self.position['z'])
+		return []
 
 	def restart( self, config, level ):
 		self.name = config.name 

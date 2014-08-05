@@ -123,24 +123,33 @@ class Controller(Quadrotor, object):
 	def recieve_estimated_pose( self, pose ):
 		dt = self.update_callback_time( inspect.stack()[0][3] )
 		for key, siso_controller in self.controller.items():
-			siso_controller.input_measurement( getattr(pose, key), dt )
+			siso_controller.input_pose( getattr(pose, key), dt )
 			
 		self.position['yaw'] = getattr(pose, 'yaw')
 
 	def recieve_estimated_velocity( self, velocity ):
-		dt = self.update_callback_time( inspect.stack()[0][3] )
-		pass 
+		#dt = self.update_callback_time( inspect.stack()[0][3] )
+		for key, siso_controller in self.controller.items():
+			try:
+				siso_controller.input_velocity( getattr(velocity, key) )
+			except AttributeError:
+				pass 
 
 	def recieve_desired_pose( self, pose ):
-		dt = self.update_callback_time( inspect.stack()[0][3] )
+		#dt = self.update_callback_time( inspect.stack()[0][3] )
 		for key, siso_controller in self.controller.items():
-			siso_controller.change_set_point( getattr(pose, key), dt )
+			siso_controller.change_set_point_pose( getattr(pose, key) )
 
 	def recieve_desired_velocity( self, velocity ):
-		dt = self.update_callback_time( inspect.stack()[0][3] )
-		for key in self.velocity.keys():
-			self.velocity[key] = getattr(velocity, key)
+		#dt = self.update_callback_time( inspect.stack()[0][3] )
 
+		for key, siso_controller in self.controller.items():
+			self.velocity[key] = getattr(velocity, key)
+			try:
+				siso_controller.change_set_point_velocity( getattr(velocity, key) )
+			except AttributeError:
+				pass
+			
 	def recieve_state( self, controller_state ):
 		self.controller_state.set_state( controller_state ) 
 		rospy.logwarn( 'Controller succesfully {0}activated!'.format( '' if self.controller_state.on else 'de' ) )
@@ -155,7 +164,7 @@ class Controller(Quadrotor, object):
 			if self.controller_state.position:
 				for key, siso_controller in self.controller.items():
 					velocity[key] = siso_controller.get_output()
-					if abs(velocity[key]) < 0.005:
+					if abs(velocity[key]) < 0.005: #go-to-Hover
 						velocity[key] = 0.00
 
 				yaw = self.position['yaw']
@@ -167,11 +176,13 @@ class Controller(Quadrotor, object):
 			else:
 				velocity = self.velocity 
 
+			
+			"""
 			if abs(velocity['x']) > 0.1:
 				velocity['x'] = 0.1 if velocity['x']>0 else -0.1
 			if abs(velocity['y']) > 0.1:
 				velocity['y'] = 0.1 if velocity['y']>0 else -0.1
-
+			"""
 			self.commander.velocity( velocity )
 
 

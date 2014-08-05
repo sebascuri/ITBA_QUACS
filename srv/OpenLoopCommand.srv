@@ -3,4 +3,5 @@ string direction_axis
 float64 time #seconds
 float64 dt #seconds
 float64 f #Hz
+float64 amplitude #gain
 ---

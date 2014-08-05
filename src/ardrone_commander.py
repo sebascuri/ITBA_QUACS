@@ -18,6 +18,8 @@ from ardrone_control.srv import OpenLoopCommand
 from ardrone_control.msg import QuadrotorPose
 from ardrone_control.msg import ControllerState
 
+import std_srvs.srv
+
 import tf
 
 import sys
@@ -27,11 +29,17 @@ import inspect
 
 #from math import pi , cos, sin 
 import math
-STEP = dict( 
+POSITION_STEP = dict( 
 	x = 0.1, 
 	y = 0.1, 
 	z = 0.1, 
 	yaw = math.pi/36.0)
+VELOCITY_STEP = dict(
+	x = 0.5, 
+	y = 0.5, 
+	z = 0.5, 
+	yaw = 0.5)
+
 COMMAND_TIME = 0.01
 
 class ArdroneCommander(Quadrotor, object):
@@ -53,7 +61,8 @@ class ArdroneCommander(Quadrotor, object):
 			)
 
 		self.service = dict(
-			signal = rospy.Service('ardrone_control/Signal', OpenLoopCommand, self.signal_init)
+			signal = rospy.Service('ardrone_control/Signal', OpenLoopCommand, self.signal_init),
+			gps = rospy.ServiceProxy('ardrone/calibrate_gps', std_srvs.srv.Empty),
 			)
 
 		self.tf_broadcaster = dict( 
@@ -66,12 +75,18 @@ class ArdroneCommander(Quadrotor, object):
 
 		self.controller_state  = False #on or off 
 
-	def talk( self, time_data ):		
+	def talk( self, time_data ):	
+		self.publisher['desired_pose'].publish( self.get_msg(self.position) )
+		self.publisher['desired_velocity'].publish( self.get_msg(self.velocity) ) 
+
+		"""
 		if self.state == ArDroneStates.Flying or self.state == ArDroneStates.Hovering:
-			self.publisher['desired_pose'].publish( self.get_msg(self.position) )
-			self.publisher['desired_velocity'].publish( self.get_msg(self.velocity) ) 
+			
+			print self.velocity
 		else:
+			self.publisher['desired_pose'].publish( self.get_msg(self.position) )
 			self.publisher['desired_velocity'].publish( self.get_msg( dict(x = 0.0, y=0.0, z = 0.0, yaw = 0.0) ) )
+		"""
 			
 	def publish_controller_state( self ):
 		msg = ControllerState()
@@ -89,7 +104,7 @@ class ArdroneCommander(Quadrotor, object):
 		msg = QuadrotorPose()
 		for key, value in attribute.items():
 			setattr(msg, key, value)
-
+		msg.header.stamp = rospy.Time.now()
 		return msg 
 
 	def outdoor( self ):
@@ -123,6 +138,13 @@ class ArdroneCommander(Quadrotor, object):
 		self.control_off()
 		#self.signal_off()
 		self.commander.land() 
+
+	def calibrate_gps( self ):
+		rospy.wait_for_service('ardrone/calibrate_gps')
+		try:
+			self.service['gps']()
+		except rospy.ServiceException, e:
+			rospy.logerr( "Service call failed: %s"%e )
 
 	def stop( self, *args ):
 		self.control_off()
@@ -163,10 +185,10 @@ class ArdroneCommander(Quadrotor, object):
 		self.battery = navdata.batteryPercent
 
 	def change_set_point( self, direction, scale ):
-		self.position[direction] += scale * STEP[ direction ]
+		self.position[direction] += scale * POSITION_STEP[ direction ]
 	
 	def change_velocity( self, direction, scale):
-		self.velocity[direction] = scale * STEP[direction]
+		self.velocity[direction] = scale * VELOCITY_STEP[direction] 
 
 	def x( self, scale ):
 		self.change_set_point( 'x', scale )
@@ -212,7 +234,7 @@ class ArdroneCommander(Quadrotor, object):
 			if self.state == ArDroneStates.Flying or self.state == ArDroneStates.Hovering: 
 				#self.control_off()
 				self._stop()
-				self.signal = SignalResponse( tf = signal_data.time, dt = signal_data.dt, f = signal_data.f, signal = signal_data.signal, direction = signal_data.direction ) 
+				self.signal = SignalResponse( tf = signal_data.time, dt = signal_data.dt, f = signal_data.f, signal = signal_data.signal, direction = signal_data.direction, amplitude = signal_data.amplitude ) 
 				self.timer['signal'] = rospy.Timer( rospy.Duration(self.signal.dt), self.cmd_signal, oneshot = False )
 				rospy.logwarn("Signal Started!")
 			else:
@@ -237,12 +259,14 @@ class ArdroneCommander(Quadrotor, object):
 		self._stop()
 
 	def default_chirp_data(self, direction):
+		chirp_dict = dict( x = 0.1, y = 0.1, z = 0.5, yaw = 0.5 )
 		data = OpenLoopCommand()
 		data.time = 20
 		data.dt = 0.01
 		data.f = 0.5
 		data.signal = 'chirp'
 		data.direction = direction
+		data.amplitude = chirp_dict[direction]
 
 		return data
 
@@ -449,13 +473,13 @@ class KeyBoardController(ArdroneCommander, QtGui.QWidget, object):
 			return
 
 		if key == QtCore.Qt.Key_A or key == QtCore.Qt.Key_D:
-			self.yaw( 0 )
+			self.vyaw( 0 )
 		elif key == QtCore.Qt.Key_S or key == QtCore.Qt.Key_W:
-			self.z( 0 )
+			self.vz( 0 )
 		elif key == QtCore.Qt.Key_I or key == QtCore.Qt.Key_K:
-			self.x( 0 )
+			self.vx( 0 )
 		elif key == QtCore.Qt.Key_L or key == QtCore.Qt.Key_J:
-			self.y( 0 )
+			self.vy( 0 )
 
 	def closeEvent(self, event):
 		reply = QtGui.QMessageBox.question(self, 'Message',
