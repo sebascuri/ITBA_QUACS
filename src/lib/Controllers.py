@@ -11,15 +11,19 @@ class ControllerState(object):
 	def __init__(self, *args, **kwargs):
 		self.on = False
 		self.position = False
+		self.local = True
 
 	def set_state(self, new_state):
-		self.on = new_state.on 
+		self.on = new_state.flying or new_state.hovering 
+		self.flying = new_state.flying
+		self.hovering = new_state.hovering
 		self.position = new_state.position
+		self.local = new_state.local 
 
 class Digital(Filter.Digital, object):
 	"""docstring for Digital"""
 	def __init__(self, **kwargs):
-		super(Digital, self).__init__()
+		super(Digital, self).__init__( **kwargs )
 		self.set_point = kwargs.get('set_point', 0.0)
 		self.error = kwargs.get('error', 0.0)
 		self.periodic = kwargs.get('periodic', False)
@@ -33,6 +37,9 @@ class Digital(Filter.Digital, object):
 			self.error = math.atan2( math.sin( self.error ), math.cos( self.error ))
 
 		return self.set_input( self.error )	
+
+	def get_error( self ):
+		return self.error 
 
 class ZPK(Filter.ZPK, object):
 	"""docstring for ZPK"""
@@ -56,9 +63,10 @@ class ZPK(Filter.ZPK, object):
 		self.error = self.set_point - measurement 
 		if self.periodic:
 			self.error = math.atan2( math.sin( self.error ), math.cos( self.error ))
-
 		return self.set_input( self.error )
-
+	
+	def get_error( self ):
+		return self.error 
 		
 class TF(Filter.TF, object):
 	"""docstring for TF"""
@@ -82,6 +90,9 @@ class TF(Filter.TF, object):
 
 		return self.set_input( self.error )
 	
+	def get_error( self ):
+		return self.error 
+
 class PID(object):
 	"""docstring for PID"""
 	def __init__(self, **kwargs):
@@ -144,6 +155,9 @@ class PID(object):
 		for key in self.parallel_errors.keys():
 			self.parallel_errors[key] = 0.0
 
+	def get_error( self ):
+		return self.parallel_errors['proportional']
+	
 def main():
 
 	c = Digital()

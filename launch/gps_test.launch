@@ -1,0 +1,12 @@
+<launch>
+<param name="ardrone/version" type="int" value="2" />
+
+<!-- rosrun gps_reciever -->
+<node name="gps_reciever" pkg="ardrone_control" type="gps_reciever.py" respawn="false" output="screen" clear_params="true">
+</node> 		
+<!-- rosrun state_estimation -->
+<node name="state_estimation" pkg="ardrone_control" type="state_estimation.py" respawn="false" output="screen" clear_params="true">
+	<rosparam file="$(find ardrone_control)/parameters/Filter_Parameters.yaml" command="load" />
+</node>  
+
+</launch>

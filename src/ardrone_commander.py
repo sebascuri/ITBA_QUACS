@@ -63,6 +63,7 @@ class ArdroneCommander(Quadrotor, object):
 		self.service = dict(
 			signal = rospy.Service('ardrone_control/Signal', OpenLoopCommand, self.signal_init),
 			gps = rospy.ServiceProxy('ardrone/calibrate_gps', std_srvs.srv.Empty),
+			imu = rospy.ServiceProxy('ardrone/calibrate_imu', std_srvs.srv.Empty),
 			)
 
 		self.tf_broadcaster = dict( 
@@ -74,11 +75,12 @@ class ArdroneCommander(Quadrotor, object):
 			)
 
 		self.controller_state  = False #on or off 
+		self.local_controller = True #local or global 
 
 	def talk( self, time_data ):	
 		self.publisher['desired_pose'].publish( self.get_msg(self.position) )
 		self.publisher['desired_velocity'].publish( self.get_msg(self.velocity) ) 
-
+		self.publish_controller_state()
 		"""
 		if self.state == ArDroneStates.Flying or self.state == ArDroneStates.Hovering:
 			
@@ -91,13 +93,15 @@ class ArdroneCommander(Quadrotor, object):
 	def publish_controller_state( self ):
 		msg = ControllerState()
 
-		msg.on = (self.state == ArDroneStates.Flying or self.state == ArDroneStates.Hovering)
-		msg.on = True #debug
+		#msg.on = (self.state == ArDroneStates.Flying or self.state == ArDroneStates.Hovering)
+		msg.flying = self.state == ArDroneStates.Flying
+		msg.hovering = self.state == ArDroneStates.Hovering
 		msg.position = self.controller_state
+		msg.local = self.local_controller
 
-		rospy.logwarn("{0} Controller".format('Activating' if msg.on else 'Deactivating'))
-		if self.controller_state:
-			rospy.logwarn('Setting {0} Control'.format( 'position' if msg.position else 'velocity') )
+		#rospy.logwarn("{0} Controller".format('Activating' if msg.on else 'Deactivating'))
+		#if self.controller_state:
+		#	rospy.logwarn('Setting {0} Control'.format( 'position' if msg.position else 'velocity') )
 		self.publisher['controller_state'].publish(msg)
 
 	def get_msg( self, attribute ):
@@ -121,20 +125,20 @@ class ArdroneCommander(Quadrotor, object):
 		
 	def take_off( self, *args ):
 		if self.state == ArDroneStates.Landed : #landed
-			rospy.logwarn("Take Off Drone!")
+			rospy.loginfo("Take Off Drone!")
 			self.commander.take_off()
 		else:
 			rospy.logwarn("Drone is not landed")
 
 	def reset( self, *args ):
 		if self.state == ArDroneStates.Landed or self.state == ArDroneStates.Unknown: #landed
-			rospy.logwarn("Reset Drone!")
+			rospy.loginfo("Reset Drone!")
 			self.commander.reset()
 		else:
 			rospy.logwarn("It is not safe to reset!")
 
 	def land( self, *args ):
-		rospy.logwarn("Land Drone!")
+		rospy.loginfo("Land Drone!")
 		self.control_off()
 		#self.signal_off()
 		self.commander.land() 
@@ -145,12 +149,19 @@ class ArdroneCommander(Quadrotor, object):
 			self.service['gps']()
 		except rospy.ServiceException, e:
 			rospy.logerr( "Service call failed: %s"%e )
+	
+	def calibrate_imu( self ):
+		rospy.wait_for_service('ardrone/calibrate_imu')
+		try:
+			self.service['imu']()
+		except rospy.ServiceException, e:
+			rospy.logerr( "Service call failed: %s"%e )
 
 	def stop( self, *args ):
 		self.control_off()
 		self.signal_off()
 		
-		rospy.logwarn("Stop!")
+		rospy.loginfo("Stop!")
 		self._stop()
 
 	def _stop(self):
@@ -224,6 +235,14 @@ class ArdroneCommander(Quadrotor, object):
 		self.controller_state = False 
 		self.publish_controller_state( )
 
+	def glob( self ):
+		self.local_controller = False
+		self.publish_controller_state( )
+
+	def local( self ):
+		self.local_controller = True
+		self.publish_controller_state( )
+
 	def signal_init( self, signal_data ):
 		# inits signal
 		self.controller_state = False
@@ -232,11 +251,10 @@ class ArdroneCommander(Quadrotor, object):
 			rospy.logwarn( "It's still sending data" )
 		else:
 			if self.state == ArDroneStates.Flying or self.state == ArDroneStates.Hovering: 
-				#self.control_off()
 				self._stop()
 				self.signal = SignalResponse( tf = signal_data.time, dt = signal_data.dt, f = signal_data.f, signal = signal_data.signal, direction = signal_data.direction, amplitude = signal_data.amplitude ) 
 				self.timer['signal'] = rospy.Timer( rospy.Duration(self.signal.dt), self.cmd_signal, oneshot = False )
-				rospy.logwarn("Signal Started!")
+				rospy.loginfo("Signal Started!")
 			else:
 				rospy.logwarn(  "Drone not Flying" )
 	
@@ -252,14 +270,14 @@ class ArdroneCommander(Quadrotor, object):
 		try:
 			self.timer['signal'].shutdown( )
 			self.signal = [ ]
-			rospy.logwarn("Signal Finished!")
+			rospy.loginfo("Signal Finished!")
 		except KeyError:
 			pass
 
 		self._stop()
 
 	def default_chirp_data(self, direction):
-		chirp_dict = dict( x = 0.1, y = 0.1, z = 0.5, yaw = 0.5 )
+		chirp_dict = dict( x = 0.1, y = 0.1, z = 0.2, yaw = 0.5 )
 		data = OpenLoopCommand()
 		data.time = 20
 		data.dt = 0.01
@@ -281,6 +299,7 @@ class ArdroneCommander(Quadrotor, object):
 
 	def chirp_yaw( self, *args ):
 		self.signal_init( self.default_chirp_data('yaw') )  
+
 
 class JoystickController(ArdroneCommander, object):
 	"""docstring for JoystickController"""
@@ -307,7 +326,7 @@ class JoystickController(ArdroneCommander, object):
 					pass
 		except AttributeError:
 			pass
-
+			
 class KeyBoardController(ArdroneCommander, QtGui.QWidget, object):
 	"""docstring for KeyBoardC"""
 	def __init__(self, **kwargs):

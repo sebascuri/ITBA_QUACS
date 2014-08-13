@@ -1,0 +1,63 @@
+<launch>
+<param name="ardrone/version" type="int" value="2" />
+
+<!-- rosrun gui -->
+<node name="ardrone_gui" pkg="ardrone_control" type="gui.py" respawn="false" output="screen" required="true" clear_params="true"/>
+<!-- rosrun controller -->
+<node name="controller" pkg="ardrone_control" type="controller.py" respawn="false" output="screen" clear_params="true">
+	<rosparam file="$(find ardrone_control)/parameters/PID_Parameters.yaml" command="load" />
+</node> 		
+<!-- rosrun state_estimation -->
+<node name="state_estimation" pkg="ardrone_control" type="state_estimation.py" respawn="false" output="screen" clear_params="true">
+	<rosparam file="$(find ardrone_control)/parameters/Filter_Parameters.yaml" command="load" />
+</node>  
+
+
+<!-- rosrun ardrone_autonomy driver -->
+<node name="ardrone_autonomy" pkg="ardrone_autonomy" type="ardrone_driver" respawn="false" output="screen" > 
+	<!-- Modifies the drone's onboard parameters. If not specified, drone default will be used (consult SDK or ardrone_autonomy wiki) -->
+	<param name="ardrone_name" value="My ArDrone" />
+
+	<!-- Tunes flight characteristics -->
+	<param name="outdoor" value="0" />
+	<param name="flight_without_shell" value="0" />
+
+	<!-- Tunes video capabilities 
+	<param name="max_bitrate" value="2000" />
+	<param name="bitrate" value="2000" />
+	<param name="video_codec" value="129" /> 
+	-->
+
+	<!-- Tunes sonar sensor for take-off and landing -->
+	<param name="altitude" value="0" />
+	<param name="altitude_max" value="3000" />
+	<param name="altitude_min" value="20" />
+
+	<!-- Tunes the maximum speed of the drone -->
+	<param name="control_vz_max" value="500" />
+	<param name="control_yaw" value="0.80" />
+	<param name="euler_angle_max" value="0.1" />
+
+	<param name="do_imu_caliberation" value="false" />
+	<param name="tf_prefix" value="ardrone" />
+
+	<!-- Enables the standard /ardrone/navdata, imu and mag topics. If not specified, defaults to TRUE -->
+	<param name="enable_legacy_navdata" value="true" />	
+	<!-- Tunes the speed at which the ros loop runs, and thus, the rate at which navdata is published -->
+	<!-- param name="looprate" value="100" /-->
+
+	<!-- Do we want to publish new-style navdata when received (true), or every time the ros-loop runs (false)? -->
+	<!-- (does not affect legacy navdata, which is always published at ros-loop rate) -->
+	<param name="realtime_video" value="False" />
+	<param name="realtime_navdata" value="True"/> 
+	<param name="navdata_demo" value="0"/> 
+
+	<param name="looprate" value="200" />
+
+	<!-- Covariance Values (3x3 matrices reshaped to 1x9)-->
+	<rosparam param="cov/imu_la">[0.1, 0.0, 0.0, 0.0, 0.1, 0.0, 0.0, 0.0, 0.1]</rosparam>
+    <rosparam param="cov/imu_av">[1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]</rosparam>
+    <rosparam param="cov/imu_or">[1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 100000.0]</rosparam>
+</node>  
+
+</launch>

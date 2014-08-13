@@ -88,12 +88,12 @@ class SOSDigital(object):
 class ZPK(SOSDigital, object):
 	"""docstring for ZPK"""
 	def __init__(self, zeros, poles, gain, **kwargs):
-		super(ZPK, self).__init__( tf2sos(zeros, poles, gain) )
+		super(ZPK, self).__init__( zpk2sos(zeros, poles, gain) )
 		
 class TF(SOSDigital, object):
 	"""docstring for TF"""
 	def __init__(self, num, den, **kwargs):
-		super(TF, self).__init__( zpk2sos(num, den) )
+		super(TF, self).__init__( tf2sos(num, den) )
 				
 class ExtendedKalman(object):
 	"""docstring for ExtendedKalmanFilter"""
@@ -113,7 +113,7 @@ class ExtendedKalman(object):
 
 	def correct_covariance(self, H):
 		aux = np.dot(self.K , H)
-		self.E = np.dot( matlib.eye(np.size(aux)) - aux  , self.E)
+		self.E = np.dot( matlib.eye(aux.shape[0]) - aux  , self.E)
 
 	def correct_state(self, X, Z, Z_expected):
 		X += np.dot(self.K , Z - Z_expected)
@@ -121,7 +121,7 @@ class ExtendedKalman(object):
 
 	def correct_gain(self, H):
 		self.K = np.dot( np.dot(self.E , H.transpose()) ,
-			np.linalg.inv( np.dot(H , np.dot( self.E * H.transpose()) ) + self.R)
+			np.linalg.inv( np.dot(H , np.dot( self.E , H.transpose()) ) + self.R)
 			)
 
 	def correct(self, dt, X, Z, Z_expected, H):
@@ -167,6 +167,8 @@ class GPS_Odometry(ExtendedKalman, object):
 		self.J = np.mat( kwargs.get('J', matlib.eye( 4 ) ) ) #X = x,y,z,yaw 
 		self.X = np.mat( kwargs.get('X', [0,0,0,0]) ).transpose()
 
+		self.E = matlib.zeros( (4,4) ) 
+
 		self.C = np.mat([ 
 			[1,0,0,0], 
 			[0,1,0,0], 
@@ -192,8 +194,9 @@ class GPS_Odometry(ExtendedKalman, object):
 		return position 
 
 	def correct(self, position, gps_sensor):
-		measurement = gps_sensor.get_pose()
-		Z = np.mat([ measurement['x'],measurement['y'],measurement['z'] ]).transpose()
+		#measurement = gps_sensor.get_pose()
+		measurement = gps_sensor.get_vector()
+		Z = np.mat([ measurement[0],measurement[1],measurement[2] ]).transpose()
 
 		self.correct_gain( self.C )
 		self.correct_covariance( self.C )
@@ -204,7 +207,7 @@ class GPS_Odometry(ExtendedKalman, object):
 		position['z'] = self.X.item(2)
 
 		return position 
-
+		
 class Camera_Odometry(object):
 	"""docstring for Camera_Odometry"""
 	def __init__(self):
@@ -354,9 +357,85 @@ class Mahoney(SO3, object):
 
  		return (quaternion + qdot * dt).normalize()
 
+class ImuCameraPlaneVelocity(object):
+	"""docstring for ImuCameraPlaneVelocity"""
+	def __init__(self, gamma = 0.5):
+		super(ImuCameraPlaneVelocity, self).__init__()
+		self.velocity = dict( x = 0.0, y = 0.0)
+		self.accelerometer_velocity = dict( x = 0.0, y = 0.0 )
+		self.camera_velocity = dict( x = 0.0, y = 0.0 )
+		self.gamma = gamma
+
+	def predict( self, unbiased_acceleration, dt ):
+		self.accelerometer_velocity['x'] += unbiased_acceleration[0] * dt 
+		self.accelerometer_velocity['y'] += unbiased_acceleration[1] * dt 
+		self.update_velocity()
+
+	def camera_mesure( self, navdata ):
+		self.camera_velocity['x'] = navdata.vx / 1000.0
+		self.camera_velocity['y'] = navdata.vy / 1000.0
+		self.update_velocity()
+
+	def update_velocity( self ):
+		for key in self.velocity.keys():
+			self.velocity[key] = self.gamma * self.camera_velocity[key] + (1-self.gamma) * self.accelerometer_velocity[key]
+		
+	def get_velocity( self ):
+		return self.velocity
+
+class ImuRangeVerticalVelocity(	object):
+	"""docstring for Imu_Range_Z_Velocity"""
+	def __init__(self, gamma = 0.5):
+		super(ImuRangeVerticalVelocity, self).__init__()
+		self.gamma = gamma
+		self.range_velocity = 0.0
+		self.accelerometer_velocity = 0.0 
+		self.velocity = 0.0
+
+	def predict( self, unbiased_acceleration, dt ):
+		self.accelerometer_velocity += unbiased_acceleration[2] * dt 
+		self.update_velocity()
+
+	def range_measure( self, range_sensor ):
+		self.range_velocity = range_sensor.velocity
+		self.update_velocity()
+
+	def update_velocity( self ):
+		self.velocity = self.gamma * self.range_velocity + ( 1 - self.gamma ) * self.accelerometer_velocity 		
+	
+	def get_velocity( self ):
+		return dict( z = self.velocity ) 
+
+class VelocityFilter(object):
+	"""docstring for VelocityFilter"""
+	def __init__(self, gamma_plane = 0.5, gamma_vertical = 0.5):
+		super(VelocityFilter, self).__init__()
+		self.velocity = dict( x = 0.0, y = 0.0, z = 0.0)
+		self.plane_velocity_filter = ImuCameraPlaneVelocity( gamma_plane )
+		self.vertical_velocity_filter = ImuRangeVerticalVelocity( gamma_plane )
+
+	def predict(self, unbiased_acceleration, dt):
+		self.plane_velocity_filter.predict(unbiased_acceleration, dt )
+		self.vertical_velocity_filter.predict(unbiased_acceleration, dt)
+
+	def range_measure( self, range_sensor):
+		self.vertical_velocity_filter.range_measure(range_sensor)
+		self.update_velocity( )
+
+	def camera_mesure( self, navdata):
+		self.plane_velocity_filter.camera_mesure( navdata)
+		self.update_velocity( )
+
+	def update_velocity( self ):
+		self.velocity.update( self.vertical_velocity_filter.get_velocity() )
+		self.velocity.update( self.plane_velocity_filter.get_velocity() )
+
+	def get_velocity( self ):
+		return self.velocity
 		
 def main():
 	Digital()
+	ZPK( [], [0.2], 1)
 	ZPK( [1,1],[0.2,0.3],1 )
 	TF( [1,1],[0.2,0.3] )
 	ExtendedKalman()

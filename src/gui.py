@@ -37,7 +37,9 @@ from PyQt4 import QtGui, QtCore
 
 import math
 image_format_table = {'rgb8': QtGui.QImage.Format_RGB888, 'mono8': QtGui.QImage.Format_Mono}
-COMMAND_TIME = 0.01
+COMMAND_TIME = 0.01 #s
+REFRESH_GUI_TIME = 500 #ms
+ERROR_WAY_POINT = 0.5
 
 class MplPlot(object):
 	"""docstring for MplPlot"""
@@ -163,6 +165,7 @@ class ArDronePlotCanvas(FigureCanvas):
 
 	def createPlotHandles( self ):
 		self.axes.clear() 
+		#self.axes.legend_ = None
 		i = 0
 		yLabel = set()
 		for activePlot in self.activePlots:
@@ -209,9 +212,8 @@ class CameraCanvas(QtGui.QLabel):
 			)
 		
 	def updateCamera(self):
-		pass
 		#self.setPixmap( self.pixmap.scaled( self.width(), self.height(), QtCore.Qt.KeepAspectRatioByExpanding) )
-		# QtCore.Qt.FastTransformation
+		self.setPixmap( self.pixmap.scaled( self.width(), self.height(), QtCore.Qt.KeepAspectRatio) )
 
 class ControllerSetupWizard(QtGui.QWizard):
 	"""docstring for ControllerSetupWizard"""
@@ -235,6 +237,7 @@ class ControllerSetupWizard(QtGui.QWizard):
 
 		self.controller_type = "PID"
 		self.direction = 'x'
+		self.digital = True
 
 		self.createIntroPage( self.pageList.index('Intro') )
 		self.createControllerTypePage( self.pageList.index('ControllerType') )
@@ -277,9 +280,25 @@ class ControllerSetupWizard(QtGui.QWizard):
 		comboDir.addItems( [ "x", "y", "z ", "yaw"] ); 
 		comboDir.activated[str].connect( self.onDirectionSelect )
 
+		comboInput = QtGui.QComboBox(self); 
+		comboInput.addItems( [ "Digital", "Continuous" ] ); 
+		comboInput.activated[str].connect( self.onDigitalSelect )
+
+		self.TsBox = QtGui.QDoubleSpinBox()
+		self.TsBox.setRange(0.01, 1); 
+		self.TsBox.setSingleStep(0.01)
+		TsLabel = QtGui.QLabel("Insert Sampling Time [s]")
+		
+		TsBoxLayout = QtGui.QHBoxLayout()
+		TsBoxLayout.addWidget( TsLabel )
+		TsBoxLayout.addWidget( self.TsBox )
+
 		layout = QtGui.QVBoxLayout()
-		layout.addWidget(comboType)
-		layout.addWidget(comboDir)
+		layout.addWidget( comboType )
+		layout.addWidget( comboDir )
+		layout.addWidget( comboInput )
+		layout.addLayout( TsBoxLayout )
+
 		self.pages['controllerType'].setLayout(layout)
 
 		self.setPage(page_num, self.pages['controllerType'] )
@@ -301,8 +320,7 @@ class ControllerSetupWizard(QtGui.QWizard):
 		layout = QtGui.QGridLayout()
 		i = 0
 		for key, slider in self.gains.items():
-			slider.setMaximum(2000)
-			slider.setMinimum(0)
+			slider.setRange(0, 200)
 			label = self.gain_values[key]
 			layout.addWidget(QtGui.QLabel(key), i, 0)
 			layout.addWidget(slider,i, 1)
@@ -381,6 +399,9 @@ class ControllerSetupWizard(QtGui.QWizard):
 	def onDirectionSelect(self, direction):
 		self.direction = str(direction)
 
+	def onDigitalSelect( self, digital):
+		self.digital = ('Digital' == str(digital))
+	
 	def changeGain(self):
 		for key, slider in self.gains.items():
 			self.gain_values[key].setText( str(0.01*float(slider.value())) ) 
@@ -416,7 +437,7 @@ class ControllerSetupWizard(QtGui.QWizard):
 		return parameter 
 
 	def getValues( self ):
-		return self.controller_type, self.direction, self.getControllers(), self.ok
+		return self.controller_type, self.direction, self.digital, self.TsBox.value(), self.getControllers(), self.ok
 
 	def onFinish( self ):
 		self.ok = True
@@ -444,14 +465,17 @@ class InputSetPointDialog(QtGui.QDialog):
 		layout.addWidget( combo, 0, 1 )
 		i = 1
 		for coordinate in self.coordinates:
-			self.labels[coordinate] = QtGui.QLabel( '{0} Set Point:'.format(coordinate) )
+			self.labels[coordinate] = QtGui.QLabel( '{0} Set Point [{1}]:'.format(
+				coordinate, 'deg' if coordinate == 'yaw' else 'm') 
+			)
+
 			self.box[coordinate] = QtGui.QDoubleSpinBox()
-			self.box[coordinate].setRange(-20, 20); self.box[coordinate].setSingleStep(0.5)
+			self.box[coordinate].setRange(-50, 50); self.box[coordinate].setSingleStep(0.5)
 
 			layout.addWidget(self.labels[coordinate], i, 0)
 			layout.addWidget(self.box[coordinate], i, 1)
 			i += 1
-		self.box['yaw'].setRange(-math.pi, math.pi);
+		self.box['yaw'].setRange(-180, 180);
 		self.button = QtGui.QDialogButtonBox( 
 			QtGui.QDialogButtonBox.Ok|QtGui.QDialogButtonBox.Cancel, 
 			QtCore.Qt.Horizontal )
@@ -626,7 +650,6 @@ class ArduinoSetupDialog(QtGui.QDialog):
 	def getData( self ):
 		return int( self.baudList[ self.values['baud'].currentIndex() ]), str(self.values['port'].text().simplified()), self.ok 
 
-
 class XbeeSetupDialog(QtGui.QDialog):
 	"""docstring for SignalSetupDialog"""
 	def __init__(self):
@@ -767,6 +790,7 @@ class InitialConditionDialog(QtGui.QDialog):
 		self.sensors['Gyroscope'].setCheckState(QtCore.Qt.Checked)
 		self.sensors['Magnetometer'].setCheckState(QtCore.Qt.Checked)
 		self.sensors['GPS'].setCheckState(QtCore.Qt.Checked)
+		self.sensors['Range'].setCheckState(QtCore.Qt.Checked)
 
 		widget.setLayout(layout)
 		return widget
@@ -801,19 +825,16 @@ class WayPoints(object):
 	def __init__(self, x, y, z, *yaw):
 		super(WayPoints, self).__init__()
 
-		self.subscriber = dict( 
-			cmd_vel = rospy.Subscriber('/cmd_vel', Twist, callback = self.update_way_points),
-			)
-
+		self.properties = dict()
+		
 		self.x = x
 		self.y = y 
-		self.z = z 
-
+		self.z = z
 		if len(yaw) > 0:
 			self.yaw = yaw[0]
 		else:
 			self.yaw = [0 for a in x]
-	
+
 	def __len__(self):
 		return len(self.x)
 	
@@ -827,17 +848,66 @@ class WayPoints(object):
 	def get_way_point(self):
 		return dict( x = self.x[0], y = self.y[0], z = self.z[0], yaw = self.yaw[0] )
 
-	def update_way_points( self, cmd_vel ):
-		v = cmd_vel.linear 
-		w = cmd_vel.angular 
+	def update_way_points( self, pose ):
+		error = 0
+		for key, value in self:
+			error += ( value - getattr(pose, key) )**2
+		error = math.sqrt(error)
 
-		V = sum( [v.x**2 + v.y**2 + v.z**2] ) +  sum ( [w.x**2 + w.y**2 + w.z**2] ) 
-		if V < 0.1: 
+		if error < ERROR_WAY_POINT: 
 			self.x.pop(0)
 			self.y.pop(0)
 			self.z.pop(0)
 			self.yaw.pop(0)
-		
+	
+	@property
+	def x(self):
+		return self.properties['x']
+
+	@x.setter
+	def x(self, value):
+		self.properties['x'] = value
+
+	@x.deleter
+	def x(self):
+		del self.properties['x']
+
+	@property
+	def y(self):
+		return self.properties['y']
+
+	@y.setter
+	def y(self, value):
+		self.properties['y'] = value
+
+	@y.deleter
+	def y(self):
+		del self.properties['y']
+
+	@property
+	def z(self):
+		return self.properties['z']
+
+	@z.setter
+	def z(self, value):
+		self.properties['z'] = value
+
+	@z.deleter
+	def z(self):
+		del self.properties['z']
+
+	@property
+	def yaw(self):
+		return self.properties['yaw']
+
+	@yaw.setter
+	def yaw(self, value):
+		self.properties['yaw'] = value
+
+	@yaw.deleter
+	def yaw(self):
+		del self.properties['yaw']
+
 class RosLauncher(object):
 	"""docstring for RosLauncher"""
 	def __init__(self):
@@ -849,7 +919,6 @@ class RosLauncher(object):
 		machine_name=None, args='', respawn=False, remap_args=None,
 		env_args=None, output=None, cwd=None, launch_prefix=None, 
 		required=False, filename='<unknown>'):
-
 		return roslaunch.core.Node(
 			package, node_type, name, namespace, 
 			machine_name, args, respawn, remap_args,
@@ -914,6 +983,7 @@ class MainWindow(QtGui.QMainWindow, object):
 	
 		self.pushButtons = dict()
 		self.radioButtons = dict()
+		self.radioButtons['groups'] = OrderedDict()
 		self.comboBox = dict()
 
 		self.infoLabel = OrderedDict()
@@ -925,13 +995,19 @@ class MainWindow(QtGui.QMainWindow, object):
 
 		self.layouts = dict()
 
+		
+		
+
 		self.rosLauncher = RosLauncher()
 
 		self.variableList = ['x', 'y','z','yaw']
 
 		self.initMainLayout()
+		self.plot = ArDronePlotCanvas(self.layouts['plotDisplay'], width=5, height=4, dpi=100)
+		# self.cameraImage = CameraCanvas()
+
 		self.initDirectCommandsLayout()
-		self.initCameraDisplayLayout()
+		# self.initCameraDisplayLayout()
 		self.initPlotDisplayLayout()
 		self.initStateDisplayLayout()
 
@@ -942,7 +1018,7 @@ class MainWindow(QtGui.QMainWindow, object):
 
 		timer = QtCore.QTimer(self)
 		QtCore.QObject.connect(timer, QtCore.SIGNAL("timeout()"), self.update)
-		timer.start(500)
+		timer.start(REFRESH_GUI_TIME)
 
 		self.subscriber = dict( 
 			cmd_vel = rospy.Subscriber('cmd_vel', Twist, callback = self.recieveCmdVel),
@@ -955,7 +1031,7 @@ class MainWindow(QtGui.QMainWindow, object):
 			commanded_velocity = rospy.Subscriber('cmd_vel', Twist, callback=self.recieveCmdVel)
 			)
 
-		self.setWindowState(QtCore.Qt.WindowMaximized)
+		#self.setWindowState(QtCore.Qt.WindowMaximized)
 	
 	def initMainLayout( self ):
 		mainWidget = QtGui.QWidget( self )
@@ -963,15 +1039,16 @@ class MainWindow(QtGui.QMainWindow, object):
 
 		
 		self.layouts['main'] = mainLayout
-		self.layouts['cameraDisplay'] = QtGui.QVBoxLayout()
+		# self.layouts['cameraDisplay'] = QtGui.QVBoxLayout()
 		self.layouts['stateDisplay'] = QtGui.QVBoxLayout()
 		self.layouts['plotDisplay'] = QtGui.QVBoxLayout()
 		self.layouts['directCommands'] = QtGui.QVBoxLayout()
 
-		mainLayout.addLayout( self.layouts['cameraDisplay'] , 0, 0 )
-		mainLayout.addLayout( self.layouts['stateDisplay'] , 1, 0 )
-		mainLayout.addLayout( self.layouts['plotDisplay'] , 0, 1 )
-		mainLayout.addLayout( self.layouts['directCommands'], 1, 1 )
+		# mainLayout.addLayout( self.layouts['cameraDisplay'] , 0, 0 )
+		mainLayout.addLayout( self.layouts['plotDisplay'] , 0, 0, 3, 2 )
+		mainLayout.addLayout( self.layouts['stateDisplay'] , 3, 0 )
+		
+		mainLayout.addLayout( self.layouts['directCommands'], 3,1 )
 
 		mainWidget.setLayout(mainLayout)
 
@@ -1010,18 +1087,24 @@ class MainWindow(QtGui.QMainWindow, object):
 		self.infoLabel['generalInfo']['batteryPercent'] = QtGui.QLabel( "Battery Percent: ")
 		#self.infoLabel['generalInfo']['controller'] = QtGui.QLabel( "Controller Type: ")
 
+		self.radioButtons['groups']['controllerType'] = QtGui.QButtonGroup()
 		self.radioButtons['controllerType'] = OrderedDict()
-		self.radioButtons['controllerType']['openLoop'] = QtGui.QRadioButton("Velocity Control", self.groupBox['generalInfo'], clicked=self.onControllerSelect)
-		self.radioButtons['controllerType']['openLoop'].setChecked(False)
-		self.radioButtons['controllerType']['closedLoop'] = QtGui.QRadioButton("Position Control", self.groupBox['generalInfo'], clicked=self.onControllerSelect)
-		self.radioButtons['controllerType']['closedLoop'].setChecked(False)
+		self.radioButtons['controllerType']['velocityLocal'] = QtGui.QRadioButton("Local Velocity", self.groupBox['generalInfo'], clicked=self.onControllerSelect)
+		self.radioButtons['controllerType']['velocityLocal'].setChecked(False)
+		self.radioButtons['controllerType']['velocityGlobal'] = QtGui.QRadioButton("Global Velocity", self.groupBox['generalInfo'], clicked=self.onControllerSelect)
+		self.radioButtons['controllerType']['velocityGlobal'].setChecked(False)
+		self.radioButtons['controllerType']['positionGlobal'] = QtGui.QRadioButton("Position Control", self.groupBox['generalInfo'], clicked=self.onControllerSelect)
+		self.radioButtons['controllerType']['positionGlobal'].setChecked(False)
 
 		layout['generalInfo'].addWidget( self.infoLabel['generalInfo']['batteryPercent'] )
-		layout['generalInfo'].addWidget( self.radioButtons['controllerType']['openLoop'] )
-		layout['generalInfo'].addWidget( self.radioButtons['controllerType']['closedLoop'] )
+
+		for button in self.radioButtons['controllerType'].values():
+			#QtCore.QObject.connect(button, QtCore.SIGNAL("clicked()"), self.onControlSource)
+			layout['generalInfo'].addWidget( button )
+			self.radioButtons['groups']['controllerType'].addButton( button )
 
 
-		self.groupBox['velocity'] = QtGui.QGroupBox("Speed")
+		self.groupBox['velocity'] = QtGui.QGroupBox("Estimated Speed")
 		layout['velocity'] = QtGui.QHBoxLayout()
 
 		self.infoLabel['velocity'] = OrderedDict()
@@ -1031,7 +1114,7 @@ class MainWindow(QtGui.QMainWindow, object):
 		self.infoLabel['velocity']['yaw'] = QtGui.QLabel( "vyaw: ")
 
 
-		self.groupBox['position'] = QtGui.QGroupBox("Position")
+		self.groupBox['position'] = QtGui.QGroupBox("Estimated Position")
 		layout['position'] = QtGui.QHBoxLayout()
 		self.infoLabel['position'] = OrderedDict()
 		self.infoLabel['position']['x'] = QtGui.QLabel( "x: ")
@@ -1040,7 +1123,7 @@ class MainWindow(QtGui.QMainWindow, object):
 		self.infoLabel['position']['yaw'] = QtGui.QLabel( "yaw: ")
 
 
-		self.groupBox['setPoint'] = QtGui.QGroupBox("Set Point")
+		self.groupBox['setPoint'] = QtGui.QGroupBox("Position Set Point")
 		layout['setPoint'] = QtGui.QHBoxLayout()
 		self.infoLabel['setPoint'] = OrderedDict()
 		self.infoLabel['setPoint']['x'] = QtGui.QLabel( "x: ")
@@ -1048,7 +1131,7 @@ class MainWindow(QtGui.QMainWindow, object):
 		self.infoLabel['setPoint']['z'] = QtGui.QLabel( "z: ")
 		self.infoLabel['setPoint']['yaw'] = QtGui.QLabel( "yaw: ")
 
-		self.groupBox['cmdVel'] = QtGui.QGroupBox("Commanded Velocity")
+		self.groupBox['cmdVel'] = QtGui.QGroupBox("Ar.Drone Command [roll, pitch, vz, vyaw]")
 		layout['cmdVel'] = QtGui.QHBoxLayout()
 
 		self.infoLabel['cmdVel'] = OrderedDict()
@@ -1066,6 +1149,7 @@ class MainWindow(QtGui.QMainWindow, object):
 
 			self.layouts['stateDisplay'].addWidget( self.groupBox[group] )
 
+		self.unSelectRadioButtons( 'controllerType' )
 		#self.updateSetPoint()
 
 	def initDirectCommandsLayout( self ):
@@ -1077,7 +1161,7 @@ class MainWindow(QtGui.QMainWindow, object):
 		self.pushButtons['directCommand']['land'] = QtGui.QPushButton("Land", self, clicked=self.commander.land)
 		self.pushButtons['directCommand']['takeOff']  = QtGui.QPushButton("Take Off", self, clicked=self.commander.take_off)	
 		self.pushButtons['directCommand']['reset']  = QtGui.QPushButton("Reset", self, clicked=self.commander.reset) 	
-		self.pushButtons['directCommand']['stop']  = QtGui.QPushButton("Stop", self, clicked=self.commander.stop) 	
+		self.pushButtons['directCommand']['stop']  = QtGui.QPushButton("Stop", self, clicked=self.commander.stop) 
 
 		self.pushButtons['directCommand']['land'].setMinimumHeight(60);
 
@@ -1090,7 +1174,7 @@ class MainWindow(QtGui.QMainWindow, object):
 		layout = QtGui.QGridLayout()
 
 
-		self.radioButtons['groups'] = OrderedDict()
+		
 		self.radioButtons['groups']['controlSource'] = QtGui.QButtonGroup()
 		
 		self.radioButtons['controlSource'] = dict()
@@ -1118,12 +1202,14 @@ class MainWindow(QtGui.QMainWindow, object):
 		self.layouts['directCommands'].addWidget( self.groupBox['controlSource'] )
 	
 	def initCameraDisplayLayout( self ):
+		pass 
+		"""
 		self.groupBox['camera']  = QtGui.QGroupBox("Ar.Drone Camera Display")
 		layout = QtGui.QVBoxLayout()
 		cameraSelectLayout = QtGui.QHBoxLayout()
 
 
-		self.cameraImage = CameraCanvas()
+		
 		self.radioButtons['cameraSelect'] = dict()
 		self.radioButtons['cameraSelect']['frontCamera'] = QtGui.QRadioButton("Front Camera", clicked=self.onCameraSelect)
 		self.radioButtons['cameraSelect']['frontCamera'].setChecked(True)
@@ -1138,6 +1224,7 @@ class MainWindow(QtGui.QMainWindow, object):
 
 		self.groupBox['camera'].setLayout(layout)
 		self.layouts['cameraDisplay'].addWidget( self.groupBox['camera']  )
+		"""
 
 	def initPlotDisplayLayout( self ):
 		self.groupBox['plot'] = QtGui.QGroupBox("Ar.Drone Plotter")
@@ -1146,9 +1233,6 @@ class MainWindow(QtGui.QMainWindow, object):
 		self.pushButtons['plot'] = dict()
 		self.pushButtons['plot']['selectVars'] = QtGui.QPushButton("Select Plot Variables", self)
 		self.pushButtons['plot']['selectVars'] .clicked.connect( self.selectPlotVariables )
-
-
-		self.plot = ArDronePlotCanvas(self.layouts['plotDisplay'], width=5, height=4, dpi=100)
 		
 		layout.addWidget( self.pushButtons['plot']['selectVars']  )
 		layout.addWidget( self.plot )
@@ -1185,12 +1269,19 @@ class MainWindow(QtGui.QMainWindow, object):
 		self.actions['file']['record']['trajectory_pose'] = QtGui.QAction( "Record Desired &Pose", self,checkable=True, triggered=partial(self.recordVar, "record_trajectory_pose", 'trajectory_pose' ))
 		self.actions['file']['record']['trajectory_velocity'] = QtGui.QAction( "Record Desired &Velocity", self,checkable=True, triggered=partial(self.recordVar, "record_trajectory_velocity", 'trajectory_velocity' ))
 		
+		self.actions['file']['record2'] = OrderedDict()
+		self.actions['file']['record2']['chirp'] = QtGui.QAction( "Record &Chirp", self,checkable=True, triggered=self.recordChirp )
+		self.actions['file']['record2']['position_control'] = QtGui.QAction( "Record &Position Control", self,checkable=True, triggered=self.recordPositionControl )
+
 		#self.actions['file']['record']['sensorfusion'] = QtGui.QAction( "Record &Estimation", self,checkable=True, triggered=partial(self.recordVar, "record_sensorfusion", 'sensorfusion'))
 		#self.actions['file']['record']['trajectory'] = QtGui.QAction( "Record Commanded &Trajectory", self,checkable=True, triggered=partial(self.recordVar, "record_trajectory", 'trajectory'))
 		
 		self.actions['file']['record']['recordAll'] = QtGui.QAction( "Record &All", self,checkable=True, triggered=self.recordAll)
 
 		for action in self.actions['file']['record'].values():
+			recordMenu.addAction( action )
+
+		for action in self.actions['file']['record2'].values():
 			recordMenu.addAction( action )
 
 
@@ -1207,14 +1298,13 @@ class MainWindow(QtGui.QMainWindow, object):
 		self.actions['setUp']['controllerWizard'].setShortcut('Ctrl+C+W')
 		#self.actions['setUp']['toggleCam']  = QtGui.QAction( "&Toggle Camera", self,checkable=False, triggered=self.onToggleCam )
 
-		
 		self.menus['calibration'] = menubar.addMenu('&Calibration')
 		self.actions['calibration'] = OrderedDict()
 
 		self.actions['calibration']['flatTrim'] = QtGui.QAction( "&Flat Trim", self, triggered=self.commander.flat_trim )
 		self.actions['calibration']['imuRecal'] = QtGui.QAction( "&Imu Re-Calibration", self, triggered=self.onImuCalibration )
 		self.actions['calibration']['gps'] = QtGui.QAction( "&GPS Calibrate", self, triggered=self.commander.calibrate_gps )
-
+		self.actions['calibration']['imu'] = QtGui.QAction( "&Imu Calibrate", self, triggered=self.commander.calibrate_imu )
 
 		self.menus['animation'] = menubar.addMenu('&Animations')
 		self.actions['animation'] = dict()
@@ -1296,8 +1386,8 @@ class MainWindow(QtGui.QMainWindow, object):
 		if action == 'start':
 			baud, port, ok  = XbeeSetupDialog().getData( )
 			if ok:
-				self.rosLauncher.set_param( 'arduino','boaud', baud)
-				self.rosLauncher.set_param( 'arduino','port', baud)
+				self.rosLauncher.set_param( 'xbee','baud', baud)
+				self.rosLauncher.set_param( 'xbee','port', port)
 
 				node = self.rosLauncher.init_node( "ardrone_control", "gps_reciever.py",'gps_reciever' )
 				self.rosLauncher.launch_node( node, 'gps_reciever' )
@@ -1319,12 +1409,14 @@ class MainWindow(QtGui.QMainWindow, object):
 			self.commander.cam_select(1)
 
 	def onControlSource( self ):
-		self.killJoy( )
 		if self.radioButtons['controlSource']['PS3'].isChecked():
-			self.commander.joy = PS3(); self.launchJoy( )
+			#self.commander.joy = PS3(); 
+			self.launchJoy( PS3() )
 		elif self.radioButtons['controlSource']['PS2'].isChecked():
-			self.commander.joy = PS2(); self.launchJoy( )
+			#self.commander.joy = PS2(); 
+			self.launchJoy( PS2() )			
 		elif self.radioButtons['controlSource']['function'].isChecked():
+			self.killJoy( )
 			fileName = QtGui.QFileDialog.getOpenFileName(self,
 				"Select Trajectory Function", 
 				"All Files (*);;Python Files (*.py)")
@@ -1334,9 +1426,9 @@ class MainWindow(QtGui.QMainWindow, object):
 			else:
 				self.unSelectRadioButtons('controlSource')
 		elif self.radioButtons['controlSource']['textFile'].isChecked():
-			self.commander.joy = [ ]; self.killJoy( )
+			self.killJoy( )
 			fileName= QtGui.QFileDialog.getOpenFileName(self,
-				"QFileDialog.getOpenFileName()",
+				"Select Way Point Text File",
 				"Text Files (*.txt)")
 			if fileName != "":
 				fopen = open(fileName, 'r')
@@ -1349,30 +1441,42 @@ class MainWindow(QtGui.QMainWindow, object):
 					x.append( sp[0] )
 					y.append( sp[1] )
 					z.append( sp[2] )
-					yaw.append( sp[3] )
+					yaw.append( sp[3] * math.pi / 180.0 )
 				
 				self.wayPointStart( WayPoints(x,y,z,yaw) )
 			else:
 				self.unSelectRadioButtons('controlSource')	
 		elif self.radioButtons['controlSource']['dialog'].isChecked():
+			self.killJoy( )
 			set_point_type, sp,ok = InputSetPointDialog().getValues()
 			if ok:
 				if set_point_type == 'Position':
 					for key, value in sp.items():
-						self.commander.position[key] = value 
+						if key == 'yaw':
+							self.commander.position[key] = value * math.pi / 180.0 
+						else:
+							self.commander.position[key] = value 
 				else:
 					for key, value in sp.items():
-						self.commander.velocity[key] = value 
+						if key == 'yaw':
+							self.commander.position[key] = value * math.pi / 180.0 
+						else:
+							self.commander.position[key] = value  
 
 			self.unSelectRadioButtons('controlSource')
 		elif self.radioButtons['controlSource']['keyboard'].isChecked():
-			pass
+			self.killJoy( )
 
 	def onControllerSelect( self ):
-		if self.radioButtons['controllerType']['openLoop'].isChecked():
-			self.commander.control_off()
-		elif self.radioButtons['controllerType']['closedLoop'].isChecked():
+		if self.radioButtons['controllerType']['positionGlobal'].isChecked():
 			self.commander.control_on()
+		else:
+			self.commander.control_off()
+
+			if self.radioButtons['controllerType']['velocityGlobal'].isChecked():
+				self.commander.glob( )
+			else:
+				self.commander.local( )
 
 	def onImuCalibration( self ):
 		msgBox = QtGui.QMessageBox(QtGui.QMessageBox.Warning, "Warning", "Caution, experimental!", QtGui.QMessageBox.NoButton, self)
@@ -1388,9 +1492,10 @@ class MainWindow(QtGui.QMainWindow, object):
 			params = dict( name = name )
 			params.update( position )
 			params.update( sensors )
-
-			config = self.client['state_estimation'].update_configuration(params)
-
+			try:
+				config = self.client['state_estimation'].update_configuration(params)
+			except rospy.ServiceException as exc:
+				rospy.logwarn("Check Syntax \nService did not process request: " + str(exc))
 			#set position, velocity and sensors in state_estimation node
 
 	def selectEnvironment( self ):
@@ -1439,8 +1544,8 @@ class MainWindow(QtGui.QMainWindow, object):
 
 
 		flight_animation, ok = QtGui.QInputDialog.getItem(self, "Select Flight Animation", "Flight Animation", flight_animation_list, 0, False)
-		index = flight_animation_list.index( flight_animation)
-		if index >= 15:
+		animation_type = flight_animation_list.index( flight_animation)
+		if animation_type >= 15:
 			msgBox = QtGui.QMessageBox(QtGui.QMessageBox.Warning, "Warning", "Caution, this is a dangerous animation!", QtGui.QMessageBox.NoButton, self)
 			msgBox.addButton("Continue Anyways", QtGui.QMessageBox.AcceptRole)
 			msgBox.addButton("Stop Animation", QtGui.QMessageBox.RejectRole)
@@ -1449,23 +1554,26 @@ class MainWindow(QtGui.QMainWindow, object):
 			else:
 				ok = False
 		if ok:
-			 self.commander.flight_animation( flight_animation, 0)
+			 self.commander.flight_animation( animation_type, 0)
 
 	def selectControllerWizard( self ):
-		controller_type, direction, parameters, ok = ControllerSetupWizard().getValues()
+		controller_type, direction, digital, Ts, parameters, ok = ControllerSetupWizard().getValues()
 		
 		if ok:
-			params = {'type': controller_type, 'direction': direction}
+			params = {'type': controller_type, 'direction': direction, 'digital': digital, 'Ts': Ts}
 			params.update(parameters)
-			config = self.client['controller'].update_configuration(params)
-
+			try:
+				config = self.client['controller'].update_configuration(params)
+			except rospy.ServiceException as exc:
+				rospy.logwarn("Check Syntax \nService did not process request: " + str(exc))
+		
 	def selectChirp( self ):
 		coordinate_list = ["x", "y", "z", "yaw"]
 		direction, ok = QtGui.QInputDialog.getItem(self, "Select Chirp Direction", "Coordinate", coordinate_list, 0, False)
 		direction = str(direction)
 		if ok:
 			self.commander.signal_init( self.commander.default_chirp_data(direction) )
-			
+			self.plot.reset()
 			if direction == 'z':
 				self.plot.activePlots = [ ( 'velocity' ,direction ) , ('position', direction)]	
 			else:
@@ -1509,20 +1617,22 @@ class MainWindow(QtGui.QMainWindow, object):
 		self.commander.joy = [ ];
 		self.rosLauncher.kill_node("joy")
 
-	def launchJoy(self):
+	def launchJoy(self, joystick ):
 		port, ok = QtGui.QInputDialog.getText(self, "Joystick Setup Dialog", " Select Port:", QtGui.QLineEdit.Normal,"/dev/input/js0")
 
 		if ok:
 			#"/dev/input/js0" 
-			node = self.rosLauncher.init_node( "joy", "joy_node", respawn=True )
-			self.rosLauncher.launch_node( node, "joy" )
+			self.commander.joy = joystick
+			node = self.rosLauncher.init_node( "joy", "joy_node",'joystick' )
+			self.rosLauncher.launch_node( node, 'joystick' )
 			self.rosLauncher.set_param( "joy", "dev", port)
-		else:
-			self.unSelectRadioButtons('controlSource')
+		#else:
+			#self.unSelectRadioButtons('controlSource')
 	
 	def recordVar( self, scriptName , key ):
 		if self.actions['file']['record'][key].isChecked():
-			node = self.rosLauncher.init_node( "ardrone_control", scriptName )
+			node = self.rosLauncher.init_node( "ardrone_control", scriptName, scriptName )
+			print node.name
 			self.rosLauncher.launch_node( node, scriptName )
 		else:
 			self.rosLauncher.kill_node( scriptName )
@@ -1540,12 +1650,39 @@ class MainWindow(QtGui.QMainWindow, object):
 					action.setChecked(False)
 					self.recordVar( 'record_{0}'.format(key), key )
 	
+	def recordChirp(self):
+		keys = ['cmd_vel', 'navdata', 'imu']
+		if self.actions['file']['record2']['chirp'].isChecked():
+			for key in keys:
+				action = self.actions['file']['record'][key]
+				action.setChecked(True)
+				self.recordVar( 'record_{0}'.format(key), key )
+		else:
+			for key in keys:
+				action = self.actions['file']['record'][key]
+				action.setChecked(False)
+				self.recordVar( 'record_{0}'.format(key), key )
+
+	def recordPositionControl(self):
+		keys = ['sensor_fusion_pose', 'sensor_fusion_velocity', 'trajectory_pose', 'trajectory_velocity']
+
+		if self.actions['file']['record2']['position_control'].isChecked():
+			for key in keys:
+				action = self.actions['file']['record'][key]
+				action.setChecked(True)
+				self.recordVar( 'record_{0}'.format(key), key )
+		else:
+			for key in keys:
+				action = self.actions['file']['record'][key]
+				action.setChecked(False)
+				self.recordVar( 'record_{0}'.format(key), key )
+
 	def unSelectRadioButtons( self, group_name ):
 		self.radioButtons['groups'][group_name].setExclusive(False)
 		for button in self.radioButtons[group_name].values():
 			button.setChecked(False)		  
 		self.radioButtons['groups'][group_name].setExclusive(True)  
-		self.onControlSource()
+		#self.onControlSource()
 
 	def _closeEvent(self, clicked):
 		reply = QtGui.QMessageBox.question(self, 'Message',
@@ -1641,33 +1778,46 @@ class MainWindow(QtGui.QMainWindow, object):
 			elif key == QtCore.Qt.Key_L or key == QtCore.Qt.Key_J:
 				self.commander.vy( 0 )
 
-	def wayPointStart(self, wayPoinOobject):
-		self.wayPoint = wayPoinOobject
+	def wayPointStart(self, wayPointObject):
+		self.wayPoint = wayPointObject
+		self.commander.control_on()
 		self.timer.update( way_point_update = rospy.Timer(rospy.Duration( COMMAND_TIME ), self.wayPointUpdate, oneshot=False) ) 
-		pass
-	
+		
+		for button in self.radioButtons['controlSource'].values():
+			button.setEnabled(False)
+
 	def wayPointUpdate(self, time_data):
-		while len(self.wayPoint)>0:
-			for key, value in self.wayPoint:
-				self.commander.position[key] = value
-		else:
-			self.wayPointStop()
-	
+		try:
+			if len(self.wayPoint)>0:
+				for key, value in self.wayPoint:
+					self.commander.position[key] = value
+			else:
+				self.wayPointStop()
+		except AttributeError:
+			self.timer['way_point_update'].shutdown()
+			
 	def wayPointStop(self):
-		self.unSelectRadioButtons('controlSource')
 		self.timer['way_point_update'].shutdown()
 		del self.wayPoint
+		self.commander.stop()
+		rospy.loginfo("Way Point Trajectory Ended")
+
+		for button in self.pushButtons['directCommand'].values():
+			button.setEnabled(True)
+		for button in self.radioButtons['controlSource'].values():
+			button.setEnabled(True)
+		self.unSelectRadioButtons('controlSource')
 
 	def trajectoryStart(self, trajectory_object):
 		self.trajectory = trajectory_object
-
+		
 		duration, ok = QtGui.QInputDialog.getInteger(self, 
 					"Duration:", "time [sec]:", 5, 0, 120, 1)
 
+		self.trajectory.t0 = rospy.get_time()
+		self.commander.control_on()
 		self.timer.update( trajectory_update = rospy.Timer(rospy.Duration( COMMAND_TIME ), self.trajectoryUpdate, oneshot=False) )
 		rospy.Timer(rospy.Duration( duration ), self.trajectoryStop, oneshot=True) 
-		for button in self.pushButtons['directCommand'].values():
-			button.setEnabled(False)
 
 		for button in self.radioButtons['controlSource'].values():
 			button.setEnabled(False)
@@ -1689,9 +1839,11 @@ class MainWindow(QtGui.QMainWindow, object):
 		self.timer['trajectory_update'].shutdown()
 		self.commander.stop()
 		rospy.loginfo("Trajectory Ended")
+
 		for button in self.pushButtons['directCommand'].values():
 			button.setEnabled(True)
-		
+		for button in self.radioButtons['controlSource'].values():
+			button.setEnabled(True)
 		self.unSelectRadioButtons('controlSource')
 	
 	def recieveCmdVel(self, twist):
@@ -1714,8 +1866,8 @@ class MainWindow(QtGui.QMainWindow, object):
 
 		self.parsePoseMsg( 'position', pose )
 
-		key = 'yaw'
-		self.infoLabel['position']['yaw'].setText("{0}: {1:.2f}".format( key, getattr(pose, key) * 180.0 / math.pi ) )
+		if hasattr(self, 'wayPoint'):
+			self.wayPoint.update_way_points( pose )
 
 	def recieveEstimatedVel( self, vel ):
 		if not self.update_dict[ inspect.stack()[0][3] ] :
@@ -1744,15 +1896,22 @@ class MainWindow(QtGui.QMainWindow, object):
 	def parsePoseMsg(self, attribute, pose_msg):
 		t = rospy.get_time() - self.timeZero
 		for key in self.infoLabel[attribute].keys():
-			self.infoLabel[attribute][key].setText("{0}: {1:.2f}".format( key, getattr(pose_msg, key) ) )
+			if key == 'yaw':
+				self.infoLabel[attribute][key].setText("{0}: {1}".format( key, getattr(pose_msg, key) * 180.0 / math.pi ) )
+			else:
+				self.infoLabel[attribute][key].setText("{0}: {1:.2f}".format( key, getattr(pose_msg, key) ) )
 			self.plot.plots[attribute][key].append( t, getattr(pose_msg, key) )
 
 	def updateControllerState( self ):
-		self.radioButtons['controllerType']['openLoop'].setChecked(not self.commander.controller_state)
-		self.radioButtons['controllerType']['closedLoop'].setChecked(self.commander.controller_state)
+		if self.commander.state == ArDroneStates.Landed:
+			self.unSelectRadioButtons('controllerType')
+		else:
+			self.radioButtons['controllerType']['positionGlobal'].setChecked(self.commander.controller_state )
+			self.radioButtons['controllerType']['velocityLocal'].setChecked(not self.commander.controller_state and self.commander.local_controller)
+			self.radioButtons['controllerType']['velocityGlobal'].setChecked(not self.commander.controller_state and not self.commander.local_controller)
 
 	def updateGeneralInfo( self ):
-		self.infoLabel['generalInfo']['batteryPercent'].setText("Battery Percent: {0}".format(self.commander.battery))
+		self.infoLabel['generalInfo']['batteryPercent'].setText("Battery Percent: {0:.2f}".format(self.commander.battery))
 		self.statusLabel.setText( "Ar.Drone State: <b> {0} </b> ".format( self.commander.get_state() )  )
 
 	def updateCamera( self ):
@@ -1766,8 +1925,18 @@ class MainWindow(QtGui.QMainWindow, object):
 		
 		self.updateGeneralInfo()
 		self.updatePlot()
-		self.updateCamera()
+		# self.updateCamera()
 		self.updateControllerState()
+
+		if self.commander.state == ArDroneStates.Landed :
+			for button in self.pushButtons['directCommand'].values():
+				button.setEnabled(True)
+			for button in self.radioButtons['controlSource'].values():
+				button.setEnabled(True)
+			#self.unSelectRadioButtons('controlSource')
+
+			if hasattr(self, 'wayPoint'):
+				del self.wayPoint
 
 		for key in self.update_dict.keys():
 			self.update_dict[key] = True

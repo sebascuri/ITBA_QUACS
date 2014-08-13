@@ -31,24 +31,73 @@ import tf
 import inspect
 import subprocess
 import math 
+import numpy as np 
 
+IMU_CALIBRATION_TIME = 10
 COMMAND_TIME = 0.01
+SONAR_ZERO = 0.7
+
+LIST = ['x', 'y', 'z','yaw']
+
+class ImuCalibrator(object):
+	"""docstring for ImuCalibrator"""
+	def __init__(self, state = False):
+		super(ImuCalibrator, self).__init__()
+		self.state = state 
+
+		self.gyro = dict( 
+			x = np.array( () ), 
+			y = np.array( () ), 
+			z = np.array( () ), 
+			)
+
+		self.accel = dict( 
+			x = np.array( () ), 
+			y = np.array( () ), 
+			z = np.array( () ), 
+			)
+
+		self.gyro_bias = np.array( ( rospy.get_param( '/state_estimation/Imu/gyro_bias' ) ) )
+		self.accel_bias = np.array( ( rospy.get_param( '/state_estimation/Imu/accel_bias' ) ) )
+	
+	def get_gyro_bias( self ):
+		return list( self.gyro_bias )
+
+	def get_accel_bias( self ):
+		return list( self.accel_bias )
+
+	def update( self, imu_msg ):
+		for key, array in self.gyro.items():
+			self.gyro[key] = np.append( array, getattr(imu_msg.angular_velocity, key) )
+		
+		for key, array in self.accel.items():
+			self.accel[key] = np.append( array, getattr(imu_msg.linear_acceleration, key) )
+		
+		self.update_bias( )
+
+	def update_bias( self ):
+
+		for key, array in self.gyro.items():
+			self.gyro_bias[ LIST.index(key) ] = np.mean( array )
+
+		for key, array in self.accel.items():
+			self.accel_bias[ LIST.index(key) ] = np.mean( array )
 
 class StateEstimation(Quadrotor, object):
 	"""docstring for StateEstimation"""
 	def __init__(self, **kwargs):
 		super(StateEstimation, self).__init__(**kwargs)
-
+		self.imu_calibrator = ImuCalibrator()
 		self.sensors = kwargs.get('sensors', dict() )
 		self.filters = kwargs.get('filters', dict() )
 
 		self.subscriber = dict(
 			raw_navdata = rospy.Subscriber('ardrone/navdata',Navdata, callback = self.recieve_navdata ),
-			raw_gps = rospy.Subscriber('fix', NavSatFix, callback = self.recieve_gps),
+			raw_gps = rospy.Subscriber('ardrone/fix', NavSatFix, callback = self.recieve_gps),
 			raw_imu = rospy.Subscriber('ardrone/imu', Imu, callback = self.recieve_imu ),
-			#raw_sonar = rospy.Subscriber('sonar_height', Range, callback = self.recieve_sonar ),
-			raw_mag = rospy.Subscriber('ardrone/mag', Vector3Stamped, callback = self.recieve_mag),
-			raw_bottom_camera = rospy.Subscriber('ardrone/bottom/image_raw', Image, callback = self.recieve_bottom_camera),
+			# raw_sonar = rospy.Subscriber('sonar_height', Range, callback = self.recieve_sonar ),
+			# raw_mag = rospy.Subscriber('ardrone/mag', Vector3Stamped, callback = self.recieve_mag),
+			# raw_bottom_camera = rospy.Subscriber('ardrone/bottom/image_raw', Image, callback = self.recieve_bottom_camera),
 		)
 
 		self.publisher = dict( 
@@ -58,7 +107,8 @@ class StateEstimation(Quadrotor, object):
 			)
 
 		self.service = dict(
-			gps = rospy.Service('ardrone/calibrate_gps', Empty, self.calibrate_gps)
+			gps = rospy.Service('ardrone/calibrate_gps', Empty, self.calibrate_gps),
+			imu = rospy.Service('ardrone/calibrate_imu', Empty, self.calibrate_imu),
 			)
 
 		self.tf_broadcaster = dict( local = tf.TransformBroadcaster( ) )
@@ -79,53 +129,22 @@ class StateEstimation(Quadrotor, object):
 		self.srv = Server(InitialConditionsConfig, self.restart )
 
 		self.calibrate_cameras( )
+		self.calibrate_imu( None )
+		
+		self.calibrate_gps( None )
 	
 	def publish_estimation(self, time):
-		#publish estimated pose
+		#publish estimated pose and velocity
 		self.publisher['estimated_pose'].publish( self.get_msg(self.position) )
 		self.publisher['estimated_velocity'].publish( self.get_msg(self.velocity) ) 
 		
+		#publish quaternion
 		msg = QuaternionMsg()
 		for key, value in self.orientation:
 			setattr(msg.quaternion, key, value)
 		msg.header.stamp = rospy.Time.now()
 		self.publisher['estimated_quaternion'].publish(msg)
 
-		"""
-		msg = Odometry( )
-		msg.header.stamp = rospy.Time.now()
-		msg.header.frame_id = "/nav"
-
-		msg.child_frame_id = "/local"
-
-		msg.pose.pose.position.x = self.position['x']
-		msg.pose.pose.position.y = self.position['y']
-		msg.pose.pose.position.z = self.position['z']
-
-		msg.pose.pose.orientation.x = self.orientation.x
-		msg.pose.pose.orientation.y = self.orientation.y
-		msg.pose.pose.orientation.z = self.orientation.z
-		msg.pose.pose.orientation.w = self.orientation.w 
-
-		msg.twist.twist.linear.x = self.velocity['x']
-		msg.twist.twist.linear.y = self.velocity['y']
-		msg.twist.twist.linear.z = self.velocity['z']
-
-		msg.twist.twist.angular.x = self.velocity['roll']
-		msg.twist.twist.angular.y = self.velocity['pitch']
-		msg.twist.twist.angular.z = self.velocity['yaw']
-
-		#rospy.loginfo(msgs)
-
-		self.publisher['state'].publish(msg)
-
-		self.tf_broadcaster['local'].sendTransform( (msg.pose.pose.position.x, msg.pose.pose.position.y, msg.pose.pose.position.z) , 
-			self.orientation.get_quaternion( ), 
-			msg.header.stamp,
-			msg.child_frame_id, 
-			msg.header.frame_id)
-		"""
-	
 	def get_msg( self, attribute ):
 		msg = QuadrotorPose()
 		for key, value in attribute.items():
@@ -140,62 +159,71 @@ class StateEstimation(Quadrotor, object):
 		return dt 
 
 	def recieve_navdata(self, navdata):
-		dt = self.update_callback_time( inspect.stack()[0][3] )
+		# dt = self.update_callback_time( inspect.stack()[0][3] )
 		self.set_state(navdata.state) #set state
-		# navdata = self.filter_navdata( navdata ) #filter navdata
-		#set linear velocity
-
-		if self.state == ArDroneStates.Landed:
-			self.velocity['x'] = 0.0
-			self.velocity['y'] = 0.0
-			self.velocity['z'] = 0.0
-		else:
-			self.velocity['x'] = navdata.vx / 1000.0 
-			self.velocity['y'] = navdata.vy / 1000.0 
-			self.velocity['z'] = navdata.vz / 1000.0  #ToDo Correct This
-
-		
 		self.battery = navdata.batteryPercent #set battery % 
-		
-		#predict position update
-		self.position = self.filters['position'].predict( dt, self.position, self.velocity)
 
-		#self.position['yaw'] = navdata.rotZ * math.pi / 180.0 
+		self.recieve_sonar( navdata )
+		self.recieve_mag( navdata )
+
+		self.velocity['x'] = navdata.vx / 1000.0
+		self.velocity['y'] = navdata.vy / 1000.0
 
 		self.position['z'] = navdata.altd / 1000.0
 
+		self.position['yaw'] = navdata.rotZ * math.pi / 180.0
+		# self.filters['plane_velocity'].camera_mesure( navdata )
+		# self.velocity.update( self.filters['plane_velocity'].get_velocity() )
+
+		# self.filters['vertical_velocity'].range_measure( self.sensors['range'] )
+		# self.velocity.update( self.filters['vertical_velocity'].get_velocity() )
+
 	def recieve_gps(self, gpsdata):
-		dt = self.update_callback_time( inspect.stack[0][3] )
+		# dt = self.update_callback_time( inspect.stack()[0][3] )
 
 		self.sensors['gps'].measure( gpsdata )
 
-		self.position = self.filters['position'].correct( self.position, self.sensors['gps'] )
-		#transform to local coordinates
-		#correct position estimation
+		if self.sensors['gps'].is_calibrated() and self.sensors['gps'].is_valid():
+			self.position = self.filters['position'].correct( self.position, self.sensors['gps'] )
 		
-	def recieve_imu(self, imu_raw):
+	def recieve_imu(self, imu_raw): 
 		dt = self.update_callback_time( inspect.stack()[0][3] )
 
+		#predict from gyroscope
 		self.sensors['gyroscope'].measure( imu_raw )
-		self.orientation = self.filters['attitude'].predict( dt, self.orientation, self.sensors['gyroscope'] ) 
+		# self.orientation = self.filters['attitude'].predict( dt, self.orientation, self.sensors['gyroscope'] ) 
 
+		#correct from accelerometer
 		self.sensors['accelerometer'].measure( imu_raw )
-
-		self.orientation = self.filters['attitude'].correct_accelerometer( dt, self.orientation, self.sensors['accelerometer'] ) 
+		# self.orientation = self.filters['attitude'].correct_accelerometer( dt, self.orientation, self.sensors['accelerometer'] ) 
 		
-		self.position['yaw'] = self.orientation.get_yaw()
+		#get yaw data
+		# self.position['yaw'] = self.orientation.get_yaw()
 		self.velocity['yaw'] = getattr( self.sensors['gyroscope'], 'yaw')
+		
+		#predict velocity
+		# self.predict_velocity( dt )
 
+		#predict position
+		self.predict_position( dt )
+
+		if self.imu_calibrator.state:
+			self.imu_calibrator.update( imu_raw )
+	
 	def recieve_mag(self, mag_raw):
 		dt = self.update_callback_time( inspect.stack()[0][3] )
 
 		self.sensors['magnetometer'].measure( mag_raw )
-		self.orientation = self.filters['attitude'].correct_magnetometer( dt, self.orientation, self.sensors['magnetometer'] )
-
+		
+		if self.sensors['magnetometer'].is_working():
+			self.orientation = self.filters['attitude'].correct_magnetometer( dt, self.orientation, self.sensors['magnetometer'] )
+		else:
+			rospy.logerr('Magnetometer stopped. Please Reset. {0} repetead measurements'.format(self.sensors['magnetometer'].repetitions))
+	
 	def recieve_sonar(self, range_data):
 		""" Receive Sonar Heigh proximity msgs"""
 		dt = self.update_callback_time( inspect.stack()[0][3] )
-		self.sensors['range'].measure( range_data )
+		self.sensors['range'].measure( range_data, dt )
 		
 	def recieve_bottom_camera(self, image_raw):
 		dt = self.update_callback_time( inspect.stack()[0][3] )
@@ -207,6 +235,28 @@ class StateEstimation(Quadrotor, object):
 
 		return navdata 
 
+	def predict_velocity( self, dt ):
+		# Get Unbiased Accelerometer Data
+		biased_acceleration = Quaternion( self.sensors['accelerometer'].get_quaternion() )
+		bias = Quaternion( self.imu_calibrator.get_accel_bias() )
+		unbiased_acceleration = biased_acceleration - bias 
+		
+		# Project Unbiased Accelerometer Data in Sensor Frame into Local Frame
+		local_acceleration = ( self.orientation *  unbiased_acceleration * self.orientation.conjugate() ).get_vector()
+		
+		# Integrate data
+		# self.filters['plane_velocity'].predict( local_acceleration, dt )
+		# self.velocity.update( self.filters['plane_velocity'].get_velocity() )
+
+		# self.filters['vertical_velocity'].predict( local_acceleration, dt)
+		# self.velocity.update( self.filters['vertical_velocity'].get_velocity() )
+
+	def predict_position( self, dt ):
+		#predict position
+		self.position = self.filters['position'].predict( dt, self.position, self.velocity)
+		
+		# self.position['z'] = self.sensors['range'].range
+
 	def calibrate_cameras( self ):
 
 		cmd = ' $(rospack find ardrone_control)/scripts/load_camera_parameters {0}'.format( 
@@ -217,6 +267,18 @@ class StateEstimation(Quadrotor, object):
 	def calibrate_gps( self, empty):
 		self.sensors['gps'].calibrate( self.position['yaw'], self.position['x'], self.position['y'], self.position['z'])
 		return []
+
+	def calibrate_imu( self, empty):
+		self.imu_calibrator.state = True
+		rospy.Timer(rospy.Duration(IMU_CALIBRATION_TIME), self.calibrate_imu_end, oneshot=True)
+		rospy.logwarn('Starting IMU Calibration. Do Not Move Drone for {0} seconds'.format( IMU_CALIBRATION_TIME))
+		return []
+
+	def calibrate_imu_end(self, time):
+		self.imu_calibrator.state = False
+		rospy.logwarn('Ended IMU Calibration.')
+		rospy.logwarn('Gyroscope Bias is {0}'.format(self.imu_calibrator.get_gyro_bias() ) )
+		rospy.logwarn('Accelerometer Bias is {0}'.format(self.imu_calibrator.get_accel_bias() ) )
 
 	def restart( self, config, level ):
 		self.name = config.name 
@@ -235,7 +297,7 @@ class StateEstimation(Quadrotor, object):
 		if config.Magnetometer:
 			self.sensors['magnetometer'] = Sensors.Magnetometer()
 		if config.Range:
-			sensors['range'] = Sensors.Range()
+			self.sensors['range'] = Sensors.Range()
 		if config.GPS:
 			self.sensors['gps'] = Sensors.GPS()
 		if config.Camera:
@@ -243,20 +305,21 @@ class StateEstimation(Quadrotor, object):
 
 		self.filters = dict( 
 			navdata = dict(), 
-			attitude = Filter.Magdwick( Beta = rospy.get_param( 'Magdwick', dict( Beta = 0.1) )['Beta'] ), 
-			# attitude = Filter.Mahoney( 	Kp = rospy.get_param( 'Mahoney', dict( Kp = 0.5) )['Kp'], 
-			# 		 					Ki = rospy.get_param( 'Mahoney', dict( Ki = 0.0.5) )['Ki']
+			attitude = Filter.Magdwick( Beta = rospy.get_param( '/state_estimation/Magdwick/Beta' ) ), 
+			# attitude = Filter.Mahoney( Kp = rospy.get_param( '/state_estimation/Mahoney/Kp'), 
+			# 		 					Ki = rospy.get_param( '/state_estimation/Mahoney/Ki' ) )
 			# 	),
-			position = Filter.GPS_Odometry( Q = rospy.get_param( 'GPSOdometry', dict( Q = 0.1) )['Q'], 
-											R = rospy.get_param( 'GPSOdometry', dict( R = 0.01) )['R']  
-											) 
+			position = Filter.GPS_Odometry( Q = rospy.get_param( '/state_estimation/GPSOdometry/Q'), 
+											R = rospy.get_param( '/state_estimation/GPSOdometry/R') ),
+			#plane_velocity = Filter.ImuCameraPlaneVelocity(rospy.get_param( '/state_estimation/Velocity/plane')),
+			#vertical_velocity = Filter.ImuRangeVerticalVelocity( rospy.get_param( '/state_estimation/Velocity/vertical') ),
 			)
 
-		navdata_filter_params = rospy.get_param( 'Navdata', dict() )
+		navdata_filter_params = rospy.get_param( '/state_estimation/Navdata', dict() )
 		for key, values in navdata_filter_params.items():
 			self.filters['navdata'][key] = Filter.Digital( a = values['a'], b = values['b'] )
 
-		rospy.logwarn("\nRestarted State Estimation for drone {0} with: \nInitial Postion = {1}\nSensor List: {2}".format(
+		rospy.loginfo("\nRestarted State Estimation for drone {0} with: \nInitial Postion = {1}\nSensor List: {2}".format(
 			self.name, self.position, self.sensors.keys()))
 		return config
 

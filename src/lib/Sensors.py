@@ -5,8 +5,9 @@ import utm
 import numpy.matlib as matlib
 
 from geometry_msgs.msg import Vector3, Vector3Stamped
+from ardrone_autonomy.msg import Navdata
+from sensor_msgs.msg import NavSatFix, Imu, Range, Image
 from math import cos, sin, atan2, asin, sqrt	
-
 
 #CAMERA PROCESSING
 import cv2
@@ -29,9 +30,24 @@ class GPS(object):
 		self.longitude = kwargs.get('longitude', 0.0)
 		self.altitude = kwargs.get('altitude', 0.0)
 
-		self.zero = dict()
+		easting, northing, number, letter = utm.from_latlon( self.latitude, self.longitude )
+
+		self.easting = easting
+		self.northing = northing
+
+		self.zero = dict( 
+			latitude = 0.0,
+			longitude = 0.0,
+			altitude = 0.0,
+			easting = 0.0, 
+			northing = 0.0, 
+			x = 0.0,
+			y = 0.0, 
+			z = 0.0,
+			yaw = 0.0,)
 		#self.set_enu()
 		self.calibrated = False
+		self.valid = False
 
 		self.Covariance = kwargs.get('Covariance',  matlib.eye(3) )
 
@@ -40,7 +56,10 @@ class GPS(object):
 		self.longitude = fix_data.longitude
 		self.altitude = fix_data.altitude
 
+		self.valid = bool( fix_data.status.status + 1 )
+		
 		self.set_enu()
+
 
 		i = 0
 		for var in fix_data.position_covariance:
@@ -67,13 +86,24 @@ class GPS(object):
 		easting, northing, number, letter = utm.from_latlon( self.latitude, self.longitude )
 		self.easting = easting - self.zero['easting'] 
 		self.northing = northing - self.zero['northing'] 
+		#print easting, northing 
 
+	def is_valid( self ):
+		return self.valid
+
+	def is_calibrated(self):
+		return self.calibrated
+		
 	def get_vector(self):
 
 		x = self.zero['x'] + self.easting * cos(self.zero['yaw']) - self.northing * sin(self.zero['yaw'])
 		y = self.zero['y'] + self.easting * sin(self.zero['yaw']) + self.northing * cos(self.zero['yaw'])
 		z = self.zero['z'] + self.altitude - self.zero['altitude']
 		return [x, y, z]
+
+	def get_pose(self):
+		vector = self.get_vector()
+		return dict( x = vector[0], y = vector[1], z = vector[2] )
 
 class Magnetometer(object):
 	"""docstring for Magnetometer"""
@@ -104,22 +134,30 @@ class Magnetometer(object):
 		self.H = sqrt( self.x ** 2 + self.y ** 2 + self.z ** 2 )
 
 		self.Covariance = kwargs.get('Covariance', 0.4 * matlib.eye(3) )
+		self.repetitions = 0
 
 	def __str__(self):
 		return str([self.x, self.y, self.z])
+	
 	def measure(self, mag_raw):
 		if type(mag_raw) is type( Vector3Stamped() ):
-			self.x = mag_raw.vector.x 
-			self.y = mag_raw.vector.y
-			self.z = mag_raw.vector.z 
-		elif type(mag_raw) is type( Vector3() ): 
-			self.x = mag_raw.x 
-			self.y = mag_raw.y
-			self.z = mag_raw.z
-		else:
-			self.x = navdata.magX
-			self.y = navdata.magY
-			self.z = navdata.magZ
+			mag_raw = mag_raw.vector 
+		elif type(mag_raw) is type( Navdata() ):
+			aux = Vector3()
+			aux.x = mag_raw.magX; aux.y = mag_raw.magY; aux.z = mag_raw.magZ
+			mag_raw = aux
+
+		for key in ['x','y','z']:
+				if getattr(mag_raw, key) == getattr(self, key):
+					self.repetitions += 1/3
+				else:
+					self.repetitions = 0
+
+				setattr( self, key, getattr(mag_raw, key) )
+
+		aux = self.x 
+		self.x = -self.y 
+		self.y = aux 
 
 		self.H = sqrt( self.x ** 2 + self.y ** 2 + self.z ** 2 )
 		#self.normalize()
@@ -144,9 +182,13 @@ class Magnetometer(object):
 
 	def get_quaternion(self):
 		return (self.x, self.y, self.z, 0)
+	
 	def get_vector(self):
 		return [self.x, self.y, self.z]
 
+	def is_working( self ):
+		return self.repetitions < 20
+	
 	@property 
 	def x(self):
 		return self.properties.get('x', 0.)
@@ -218,6 +260,7 @@ class Gyroscope(object):
 	
 	def get_quaternion(self):
 		return (self.roll, self.pitch, self.yaw, 0)
+	
 	def get_vector(self):
 		return [self.roll, self.pitch, self.yaw]
 	
@@ -350,16 +393,20 @@ class Range(object):
 	def __init__(self, **kwargs):
 		super(Range, self).__init__()
 		self.max_range = kwargs.get('max_range', 3000.0)
-		self.min_range = kwargs.get('min_range', 0.0)
+		self.min_range = kwargs.get('min_range', 20.0)
 		self.range = kwargs.get('range', 0.0)
+		self.velocity = 0;
 
 		self.min_safe = kwargs.get('min_safe', 0.0)
 
-	def measure(self, range_data):
-		self.max_range = range_data.max_range
-		self.min_range = range_data.min_range 
+	def measure(self, range_data, dt):
+		if type(range_data) is type( Navdata() ):
+			aux =  range_data.altd / 1000.0
+		else:
+			aux = range_data.range
 
-		self.range = range_data.range 
+		self.velocity = (aux - self.range) / dt 
+		self.range = aux
 
 	def isFar(self):
 		return self.range >= self.max_range 
@@ -406,7 +453,7 @@ def main():
 
 		kp.append(des)
 
-	print cv.FindHomography(  cv.fromarray( kp[0] ),  cv.fromarray( kp[1] ), 0)
+	#print cv.FindHomography(  cv.fromarray( kp[0] ),  cv.fromarray( kp[1] ), 0)
 
 	"""
 	#Q = scipy.signal.fftconvolve( img[0], img[1] )

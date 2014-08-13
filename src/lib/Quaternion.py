@@ -37,12 +37,20 @@ class Quaternion(object):
 				self.x=arg[0]
 				self.y=arg[1]
 				self.z=arg[2]
-				self.w=arg[3]
+				if len(arg) == 4:
+					self.w = arg[3]
+				else:
+					self.w = 0;
 			else: #np vector
 				self.x = arg.item(0)
 				self.y = arg.item(1)
 				self.z = arg.item(2)
-				self.w = arg.item(3)
+
+				if len(arg) == 4:
+					self.w = arg.item(3)
+				else:
+					self.w = 0;
+				
 
 		for key, value in kwargs.items():
 			self.properties[key] = value
@@ -295,5 +303,8 @@ def main():
 	#print q3.normalize().z_jacobian()
 	print q3.z_inv_jacobian()
 	print -q3.conjugate().z_jacobian()
+
+	q4 = Quaternion( [1,2,3] )
+	print q4
 
 if __name__ == "__main__": main() 
