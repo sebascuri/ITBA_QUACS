@@ -1004,10 +1004,10 @@ class MainWindow(QtGui.QMainWindow, object):
 
 		self.initMainLayout()
 		self.plot = ArDronePlotCanvas(self.layouts['plotDisplay'], width=5, height=4, dpi=100)
-		# self.cameraImage = CameraCanvas()
+		self.cameraImage = CameraCanvas()
 
 		self.initDirectCommandsLayout()
-		# self.initCameraDisplayLayout()
+		self.initCameraDisplayLayout()
 		self.initPlotDisplayLayout()
 		self.initStateDisplayLayout()
 
@@ -1039,17 +1039,21 @@ class MainWindow(QtGui.QMainWindow, object):
 
 		
 		self.layouts['main'] = mainLayout
-		# self.layouts['cameraDisplay'] = QtGui.QVBoxLayout()
+		self.layouts['cameraDisplay'] = QtGui.QVBoxLayout()
 		self.layouts['stateDisplay'] = QtGui.QVBoxLayout()
 		self.layouts['plotDisplay'] = QtGui.QVBoxLayout()
 		self.layouts['directCommands'] = QtGui.QVBoxLayout()
 
-		# mainLayout.addLayout( self.layouts['cameraDisplay'] , 0, 0 )
+		mainLayout.addLayout( self.layouts['cameraDisplay'] , 0, 0 )
+		mainLayout.addLayout( self.layouts['plotDisplay'] , 0, 1 )
+		mainLayout.addLayout( self.layouts['stateDisplay'] , 1, 0 )
+		mainLayout.addLayout( self.layouts['directCommands'] , 1, 1 )
+		"""
 		mainLayout.addLayout( self.layouts['plotDisplay'] , 0, 0, 3, 2 )
 		mainLayout.addLayout( self.layouts['stateDisplay'] , 3, 0 )
 		
 		mainLayout.addLayout( self.layouts['directCommands'], 3,1 )
-
+		"""
 		mainWidget.setLayout(mainLayout)
 
 		self.setCentralWidget( mainWidget )
@@ -1202,8 +1206,8 @@ class MainWindow(QtGui.QMainWindow, object):
 		self.layouts['directCommands'].addWidget( self.groupBox['controlSource'] )
 	
 	def initCameraDisplayLayout( self ):
-		pass 
-		"""
+		#pass 
+		
 		self.groupBox['camera']  = QtGui.QGroupBox("Ar.Drone Camera Display")
 		layout = QtGui.QVBoxLayout()
 		cameraSelectLayout = QtGui.QHBoxLayout()
@@ -1224,7 +1228,7 @@ class MainWindow(QtGui.QMainWindow, object):
 
 		self.groupBox['camera'].setLayout(layout)
 		self.layouts['cameraDisplay'].addWidget( self.groupBox['camera']  )
-		"""
+		
 
 	def initPlotDisplayLayout( self ):
 		self.groupBox['plot'] = QtGui.QGroupBox("Ar.Drone Plotter")
@@ -1925,7 +1929,7 @@ class MainWindow(QtGui.QMainWindow, object):
 		
 		self.updateGeneralInfo()
 		self.updatePlot()
-		# self.updateCamera()
+		self.updateCamera()
 		self.updateControllerState()
 
 		if self.commander.state == ArDroneStates.Landed :
